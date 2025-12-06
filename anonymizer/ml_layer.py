@@ -15,9 +15,8 @@ from .regex_layer import DetectedEntity, EntityType
 logger = logging.getLogger(__name__)
 
 
-# Mapowanie etykiet NER na typy encji
+# Mapowanie etykiet NER na typy encji (SpaCy)
 NER_LABEL_MAPPING = {
-    # SpaCy
     'PERSON': EntityType.NAME,
     'PER': EntityType.NAME,
     'persName': EntityType.NAME,
@@ -28,13 +27,6 @@ NER_LABEL_MAPPING = {
     'orgName': EntityType.COMPANY,
     'DATE': EntityType.DATE,
     'TIME': EntityType.DATE,
-    # Transformers (HerBERT NER)
-    'B-PER': EntityType.NAME,
-    'I-PER': EntityType.NAME,
-    'B-LOC': EntityType.CITY,
-    'I-LOC': EntityType.CITY,
-    'B-ORG': EntityType.COMPANY,
-    'I-ORG': EntityType.COMPANY,
 }
 
 
@@ -120,27 +112,20 @@ ORIENTATION_INDICATORS = {
 class MLLayer:
     """
     Warstwa ML do wykrywania encji wymagających kontekstu.
-    Obsługuje SpaCy (szybszy) lub Transformers (dokładniejszy).
+    Używa SpaCy do NER.
     """
     
     def __init__(
         self,
-        use_transformer: bool = False,
-        custom_model_path: Optional[str] = None,
-        device: str = "cpu"
+        custom_model_path: Optional[str] = None
     ):
         """
         Args:
-            use_transformer: Czy używać HerBERT zamiast SpaCy
-            custom_model_path: Ścieżka do fine-tuned modelu
-            device: 'cpu' lub 'cuda'
+            custom_model_path: Ścieżka do fine-tuned modelu SpaCy
         """
-        self.use_transformer = use_transformer
         self.custom_model_path = custom_model_path
-        self.device = device
         
         self.nlp = None
-        self.transformer_pipeline = None
         self._initialized = False
     
     def initialize(self):
@@ -150,8 +135,6 @@ class MLLayer:
         
         if self.custom_model_path:
             self._load_custom_model()
-        elif self.use_transformer:
-            self._init_transformer()
         else:
             self._init_spacy()
         
@@ -176,32 +159,6 @@ class MLLayer:
         except ImportError:
             logger.warning("SpaCy niezainstalowane - używam tylko heurystyk")
             self.nlp = None
-    
-    def _init_transformer(self):
-        """Inicjalizuje HerBERT/PolBERT dla NER."""
-        try:
-            from transformers import pipeline, AutoModelForTokenClassification, AutoTokenizer
-            import torch
-            
-            model_name = "allegro/herbert-base-cased"
-            
-            # Sprawdź czy jest fine-tuned model NER
-            try:
-                self.transformer_pipeline = pipeline(
-                    "ner",
-                    model="clarin-pl/herbert-ner",  # Polski NER
-                    device=0 if self.device == "cuda" and torch.cuda.is_available() else -1,
-                    aggregation_strategy="simple"
-                )
-                logger.info("HerBERT NER załadowany")
-            except Exception as e:
-                logger.warning(f"Nie można załadować modelu NER: {e}")
-                # Fallback do SpaCy
-                self._init_spacy()
-                
-        except ImportError:
-            logger.warning("Transformers niezainstalowane - używam SpaCy")
-            self._init_spacy()
     
     def _load_custom_model(self):
         """Ładuje własny wytrenowany model."""
@@ -236,10 +193,8 @@ class MLLayer:
         if regex_entities:
             regex_spans = {(e.start, e.end) for e in regex_entities}
         
-        # NER z modelu
-        if self.transformer_pipeline:
-            entities.extend(self._detect_transformer(text, regex_spans))
-        elif self.nlp:
+        # NER z modelu SpaCy
+        if self.nlp:
             entities.extend(self._detect_spacy(text, regex_spans))
         
         # Heurystyki kontekstowe (zawsze)
@@ -278,44 +233,6 @@ class MLLayer:
         
         return entities
     
-    def _detect_transformer(
-        self,
-        text: str,
-        regex_spans: Set[Tuple[int, int]]
-    ) -> List[DetectedEntity]:
-        """Detekcja za pomocą Transformer NER."""
-        entities = []
-        
-        try:
-            results = self.transformer_pipeline(text)
-            
-            for result in results:
-                start = result['start']
-                end = result['end']
-                
-                if self._overlaps_with(start, end, regex_spans):
-                    continue
-                
-                entity_type = self._map_transformer_label(
-                    result['entity_group'],
-                    text, start, end
-                )
-                
-                if entity_type:
-                    entities.append(DetectedEntity(
-                        text=result['word'],
-                        entity_type=entity_type,
-                        start=start,
-                        end=end,
-                        confidence=result['score'],
-                        source='ml_transformer'
-                    ))
-                    
-        except Exception as e:
-            logger.warning(f"Błąd Transformer NER: {e}")
-        
-        return entities
-    
     def _detect_context_heuristics(
         self,
         text: str,
@@ -329,7 +246,7 @@ class MLLayer:
         text_lower = text.lower()
         
         # Wykrywanie imion i nazwisk (gdy brak SpaCy)
-        if not self.nlp and not self.transformer_pipeline:
+        if not self.nlp:
             entities.extend(self._detect_names_heuristic(text, regex_spans))
             entities.extend(self._detect_cities_heuristic(text, text_lower, regex_spans))
         
@@ -617,32 +534,6 @@ class MLLayer:
         
         return None
     
-    def _map_transformer_label(
-        self,
-        label: str,
-        text: str,
-        start: int,
-        end: int
-    ) -> Optional[EntityType]:
-        """Mapuje etykiety Transformer NER na nasze typy."""
-        
-        context_start = max(0, start - 50)
-        context_end = min(len(text), end + 50)
-        context = text[context_start:context_end].lower()
-        
-        label_upper = label.upper()
-        
-        if 'PER' in label_upper:
-            return EntityType.NAME
-        elif 'LOC' in label_upper or 'GPE' in label_upper:
-            return self._classify_location(context, text[start:end])
-        elif 'ORG' in label_upper:
-            return EntityType.COMPANY
-        elif 'DATE' in label_upper:
-            return EntityType.DATE
-        
-        return None
-    
     def _classify_location(self, context: str, entity_text: str) -> EntityType:
         """
         Klasyfikuje lokalizację jako city lub address na podstawie kontekstu.
@@ -888,7 +779,7 @@ class NameSurnameSplitter:
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     
-    ml = MLLayer(use_transformer=False)
+    ml = MLLayer()
     splitter = NameSurnameSplitter()
     
     test_cases = [

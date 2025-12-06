@@ -620,9 +620,9 @@ class SyntheticDataPipeline:
     def __init__(self, seed: Optional[int] = None):
         self.generator = PolishDataGenerator(seed=seed)
         
-        # Regex do parsowania tokenów z metadanymi
+        # Regex do parsowania tokenów z metadanymi (format: [typ] lub [typ|metadata])
         self.token_pattern = re.compile(
-            r'\{([a-z-]+)(?:\|([^}]+))?\}'
+            r'\[([a-z-]+)(?:\|([^\]]+))?\]'
         )
     
     def generate_synthetic_text(
@@ -634,8 +634,8 @@ class SyntheticDataPipeline:
         Generuje tekst syntetyczny na podstawie zanonimizowanego tekstu.
         
         Args:
-            anonymized_text: Tekst z tokenami zastępczymi (np. {name})
-            intermediate_text: Opcjonalny tekst pośredni z metadanymi (np. {name|case=acc})
+            anonymized_text: Tekst z tokenami zastępczymi (np. [name])
+            intermediate_text: Opcjonalny tekst pośredni z metadanymi (np. [name|case=acc])
             
         Returns:
             Tekst z wygenerowanymi danymi syntetycznymi
@@ -715,26 +715,26 @@ if __name__ == "__main__":
     print("\n=== Test pipeline ===")
     
     # Prosty przypadek
-    anonymized = "Nazywam się {name} {surname}, mieszkam w {city}."
+    anonymized = "Nazywam się [name] [surname], mieszkam w [city]."
     synthetic = pipeline.generate_synthetic_text(anonymized)
     print(f"Input:  {anonymized}")
     print(f"Output: {synthetic}")
     
     # Z metadanymi morfologicznymi
-    intermediate = "Widziałem {name|case=acc|gender=f} w {city|case=loc}."
+    intermediate = "Widziałem [name|case=acc|gender=f] w [city|case=loc]."
     synthetic = pipeline.generate_synthetic_text(anonymized, intermediate)
     print(f"\nIntermediate: {intermediate}")
     print(f"Output: {synthetic}")
     
     # Złożony przykład
     complex_text = """
-    Pacjent: {name} {surname}
-    PESEL: {pesel}
-    Adres: {address}
-    Tel: {phone}
-    Email: {email}
-    Data wizyty: {date}
-    Diagnoza: {health}
+    Pacjent: [name] [surname]
+    PESEL: [pesel]
+    Adres: [address]
+    Tel: [phone]
+    Email: [email]
+    Data wizyty: [date]
+    Diagnoza: [health]
     """
     
     print("\n=== Złożony przykład ===")

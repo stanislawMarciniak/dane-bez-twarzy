@@ -1,25 +1,21 @@
 #!/usr/bin/env python3
 """
 Użycie:
-    python main.py --input data.jsonl --output results.jsonl
+    python main.py --input data.txt --output results.txt
     python main.py --input data.txt --synthetic
     python main.py --text "Jan Kowalski mieszka w Warszawie"
     python main.py --interactive
 
 Opcje:
-    --input, -i       Plik wejściowy (JSONL lub TXT)
+    --input, -i       Plik wejściowy (.jsonl lub .txt)
     --output, -o      Plik wyjściowy (opcjonalny - generowany automatycznie)
     --text, -t        Pojedynczy tekst do anonimizacji
     --interactive     Tryb interaktywny
     --synthetic       Generuj dane syntetyczne
     --intermediate    Zachowaj pośrednią reprezentację
     --no-ml           Wyłącz warstwę ML (tylko regex)
-    --transformer     Użyj modelu Transformer (wolniejszy, dokładniejszy)
     --model-path      Ścieżka do wytrenowanego modelu NER
     --morphology      Backend morfologiczny: 'spacy' lub 'stanza'
-    --device          Urządzenie: 'cpu' lub 'cuda'
-    --workers         Liczba workerów do przetwarzania równoległego
-    --format          Wymuś format pliku: 'jsonl' lub 'txt'
     --seed            Ziarno dla generatora danych syntetycznych
     --verbose, -v     Szczegółowe logi
     --quiet, -q       Minimalne logi
@@ -75,12 +71,10 @@ def parse_args():
     
     # Wejście/Wyjście
     io_group = parser.add_argument_group('Wejście/Wyjście')
-    io_group.add_argument('-i', '--input', type=str, help='Plik wejściowy (JSONL lub TXT)')
+    io_group.add_argument('-i', '--input', type=str, help='Plik wejściowy (.jsonl lub .txt)')
     io_group.add_argument('-o', '--output', type=str, help='Plik wyjściowy (opcjonalny)')
     io_group.add_argument('-t', '--text', type=str, help='Pojedynczy tekst do anonimizacji')
     io_group.add_argument('--interactive', action='store_true', help='Tryb interaktywny')
-    io_group.add_argument('--format', type=str, choices=['jsonl', 'txt'], 
-                          help='Wymuś format pliku. Domyślnie wykrywany z rozszerzenia.')
     
     # Opcje przetwarzania
     proc_group = parser.add_argument_group('Przetwarzanie')
@@ -90,15 +84,12 @@ def parse_args():
     
     # Konfiguracja modeli
     model_group = parser.add_argument_group('Konfiguracja modeli')
-    model_group.add_argument('--transformer', action='store_true', help='Użyj modelu Transformer')
     model_group.add_argument('--model-path', type=str, help='Ścieżka do modelu NER')
     model_group.add_argument('--morphology', type=str, choices=['spacy', 'stanza'], default='spacy', help='Backend morfologii')
-    model_group.add_argument('--device', type=str, choices=['cpu', 'cuda'], default='cpu', help='Urządzenie (cpu/cuda)')
     
-    # Wydajność
-    perf_group = parser.add_argument_group('Wydajność')
-    perf_group.add_argument('--workers', type=int, default=1, help='Liczba workerów')
-    perf_group.add_argument('--seed', type=int, help='Ziarno losowości')
+    # Opcje dodatkowe
+    extra_group = parser.add_argument_group('Opcje dodatkowe')
+    extra_group.add_argument('--seed', type=int, help='Ziarno losowości')
     
     # Logowanie
     log_group = parser.add_argument_group('Logowanie')
@@ -171,8 +162,8 @@ def main():
             print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
         
         elif args.input:
-            # Przetwarzanie pliku z uwzględnieniem formatu
-            cli.process_file(args.input, args.output, args.format)
+            # Przetwarzanie pliku (format wykrywany automatycznie z rozszerzenia)
+            cli.process_file(args.input, args.output)
             
     except FileNotFoundError as e:
         logger.error(str(e))

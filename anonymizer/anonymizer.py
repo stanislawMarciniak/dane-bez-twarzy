@@ -9,8 +9,6 @@ from typing import List, Dict, Optional, Tuple, Any, Union
 from dataclasses import dataclass, asdict
 from pathlib import Path
 import time
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
-import multiprocessing
 
 from .regex_layer import RegexLayer, DetectedEntity, EntityType
 from .ml_layer import MLLayer, NameSurnameSplitter
@@ -29,6 +27,7 @@ class AnonymizationResult:
     synthetic: Optional[str] = None
     entities: List[Dict] = None
     processing_time_ms: float = 0.0
+    layer_times: Optional[Dict[str, float]] = None
     
     def to_dict(self) -> Dict:
         """Konwertuje do słownika."""
@@ -38,7 +37,8 @@ class AnonymizationResult:
             'intermediate': self.intermediate,
             'synthetic': self.synthetic,
             'entities': self.entities or [],
-            'processing_time_ms': self.processing_time_ms
+            'processing_time_ms': self.processing_time_ms,
+            'layer_times': self.layer_times or {}
         }
 
 
@@ -51,28 +51,22 @@ class Anonymizer:
     def __init__(
         self,
         use_ml: bool = True,
-        use_transformer: bool = False,
         custom_model_path: Optional[str] = None,
         morphology_backend: str = "spacy",
         generate_synthetic: bool = False,
         synthetic_seed: Optional[int] = None,
-        include_intermediate: bool = False,
-        device: str = "cpu",
-        num_workers: int = 1
+        include_intermediate: bool = False
     ):
         """
         Inicjalizuje anonimizator.
         
         Args:
             use_ml: Czy używać warstwy ML (NER)
-            use_transformer: Czy używać modelu Transformer zamiast SpaCy
             custom_model_path: Ścieżka do wytrenowanego modelu NER
             morphology_backend: Backend do analizy morfologicznej ('spacy' lub 'stanza')
             generate_synthetic: Czy generować dane syntetyczne
             synthetic_seed: Ziarno dla powtarzalności danych syntetycznych
             include_intermediate: Czy zachować pośrednią reprezentację
-            device: Urządzenie dla modeli ML ('cpu' lub 'cuda')
-            num_workers: Liczba workerów do przetwarzania równoległego
         """
         # Warstwy
         self.regex_layer = RegexLayer()
@@ -80,9 +74,7 @@ class Anonymizer:
         self.ml_layer = None
         if use_ml:
             self.ml_layer = MLLayer(
-                use_transformer=use_transformer,
-                custom_model_path=custom_model_path,
-                device=device
+                custom_model_path=custom_model_path
             )
         
         self.name_splitter = NameSurnameSplitter()
@@ -95,7 +87,6 @@ class Anonymizer:
         
         # Konfiguracja
         self.include_intermediate = include_intermediate
-        self.num_workers = num_workers
         
         self._initialized = False
     
@@ -132,32 +123,45 @@ class Anonymizer:
         self.initialize()
         
         start_time = time.time()
+        layer_times = {}
         
         # Etap 1: Warstwa Regex
+        t0 = time.time()
         regex_entities = self.regex_layer.detect(text)
-        logger.debug(f"Regex wykrył {len(regex_entities)} encji")
+        layer_times['regex'] = (time.time() - t0) * 1000
+        logger.debug(f"Regex wykrył {len(regex_entities)} encji ({layer_times['regex']:.2f} ms)")
         
         # Etap 2: Warstwa ML
         ml_entities = []
         if self.ml_layer:
+            t0 = time.time()
             ml_entities = self.ml_layer.detect(text, regex_entities)
-            logger.debug(f"ML wykrył {len(ml_entities)} dodatkowych encji")
+            layer_times['ml'] = (time.time() - t0) * 1000
+            logger.debug(f"ML wykrył {len(ml_entities)} dodatkowych encji ({layer_times['ml']:.2f} ms)")
         
         # Połącz encje
+        t0 = time.time()
         all_entities = self._merge_entities(regex_entities, ml_entities)
+        layer_times['merge'] = (time.time() - t0) * 1000
         
         # Etap 3: Rozdziel NAME/SURNAME
+        t0 = time.time()
         all_entities = self._split_names(text, all_entities)
+        layer_times['split_names'] = (time.time() - t0) * 1000
         
         # Etap 4: Wzbogacenie morfologiczne
+        t0 = time.time()
         all_entities = self.enrichment_pipeline.enrich(text, all_entities)
+        layer_times['morphology'] = (time.time() - t0) * 1000
+        logger.debug(f"Wzbogacenie morfologiczne ({layer_times['morphology']:.2f} ms)")
         
         # Etap 5: Generowanie wyników
+        t0 = time.time()
         intermediate = None
         if self.include_intermediate:
             intermediate = self._replace_entities(text, all_entities, include_morphology=True)
-        
         anonymized = self._replace_entities(text, all_entities, include_morphology=False)
+        layer_times['replace'] = (time.time() - t0) * 1000
         
         # Etap 6: Dane syntetyczne (opcjonalnie)
         synthetic = None
@@ -166,10 +170,13 @@ class Anonymizer:
         )
         
         if should_generate and self.synthetic_pipeline:
+            t0 = time.time()
             synthetic = self.synthetic_pipeline.generate_synthetic_text(
                 anonymized,
                 intermediate
             )
+            layer_times['synthetic'] = (time.time() - t0) * 1000
+            logger.debug(f"Generowanie syntetyczne ({layer_times['synthetic']:.2f} ms)")
         
         processing_time = (time.time() - start_time) * 1000
         
@@ -179,7 +186,8 @@ class Anonymizer:
             intermediate=intermediate,
             synthetic=synthetic,
             entities=[self._entity_to_dict(e) for e in all_entities],
-            processing_time_ms=processing_time
+            processing_time_ms=processing_time,
+            layer_times=layer_times
         )
     
     def anonymize_batch(
@@ -187,7 +195,7 @@ class Anonymizer:
         texts: List[str],
         generate_synthetic: Optional[bool] = None,
         show_progress: bool = True
-    ) -> List[AnonymizationResult]:
+    ) -> Tuple[List[AnonymizationResult], Dict[str, float]]:
         """
         Anonimizuje wiele tekstów.
         
@@ -197,37 +205,42 @@ class Anonymizer:
             show_progress: Czy pokazywać postęp
             
         Returns:
-            Lista wyników anonimizacji
+            Tuple: (Lista wyników anonimizacji, średnie czasy warstw)
         """
         self.initialize()
         
         results = []
         total = len(texts)
         
-        if self.num_workers > 1:
-            # Przetwarzanie równoległe
-            with ThreadPoolExecutor(max_workers=self.num_workers) as executor:
-                futures = [
-                    executor.submit(self.anonymize, text, generate_synthetic)
-                    for text in texts
-                ]
-                
-                for i, future in enumerate(futures):
-                    result = future.result()
-                    results.append(result)
-                    
-                    if show_progress and (i + 1) % 100 == 0:
-                        logger.info(f"Przetworzono {i + 1}/{total} tekstów")
-        else:
-            # Przetwarzanie sekwencyjne
-            for i, text in enumerate(texts):
-                result = self.anonymize(text, generate_synthetic)
-                results.append(result)
-                
-                if show_progress and (i + 1) % 100 == 0:
-                    logger.info(f"Przetworzono {i + 1}/{total} tekstów")
+        # Zbierz wszystkie czasy warstw
+        all_layer_times = []
         
-        return results
+        # Przetwarzanie sekwencyjne
+        for i, text in enumerate(texts):
+            result = self.anonymize(text, generate_synthetic)
+            results.append(result)
+            
+            if result.layer_times:
+                all_layer_times.append(result.layer_times)
+            
+            if show_progress and (i + 1) % 100 == 0:
+                logger.info(f"Przetworzono {i + 1}/{total} tekstów")
+        
+        # Oblicz średnie czasy dla każdej warstwy
+        avg_layer_times = {}
+        if all_layer_times:
+            # Zbierz wszystkie klucze
+            all_keys = set()
+            for layer_times in all_layer_times:
+                all_keys.update(layer_times.keys())
+            
+            # Oblicz średnie
+            for key in all_keys:
+                values = [lt.get(key, 0) for lt in all_layer_times if key in lt]
+                if values:
+                    avg_layer_times[key] = sum(values) / len(values)
+        
+        return results, avg_layer_times
     
     def _merge_entities(
         self,
@@ -315,24 +328,21 @@ class AnonymizerCLI:
         """Konfiguruje anonimizator na podstawie argumentów."""
         self.anonymizer = Anonymizer(
             use_ml=not args.no_ml,
-            use_transformer=args.transformer,
             custom_model_path=args.model_path,
             morphology_backend=args.morphology,
             generate_synthetic=args.synthetic,
             synthetic_seed=args.seed,
-            include_intermediate=args.intermediate,
-            device=args.device,
-            num_workers=args.workers
+            include_intermediate=args.intermediate
         )
     
-    def process_file(self, input_path: str, output_path: str, format: str = None):
+    def process_file(self, input_path: str, output_path: str):
         """
         Przetwarza plik wejściowy i zapisuje wyniki.
         
-        Logika dla formatów:
-        - JSONL: Wczytuje obiekty JSON, zapisuje obiekty JSON z metadanymi.
-        - TXT: Wczytuje plik LINIA PO LINII (każda linia to osobny przykład).
-               Zapisuje plik wyjściowy LINIA PO LINII (czysty tekst).
+        Obsługiwane formaty (wykrywane z rozszerzenia):
+        - .jsonl: Wczytuje obiekty JSON, zapisuje obiekty JSON z metadanymi.
+        - .txt: Wczytuje plik LINIA PO LINII (każda linia to osobny przykład).
+                Zapisuje plik wyjściowy LINIA PO LINII (czysty tekst).
         """
         input_path = Path(input_path)
         output_path = Path(output_path)
@@ -340,34 +350,32 @@ class AnonymizerCLI:
         if not input_path.exists():
             raise FileNotFoundError(f"Plik nie istnieje: {input_path}")
         
-        # Autodetekcja formatu, jeśli nie podano
-        if format is None:
-            if input_path.suffix.lower() == '.jsonl':
-                format = 'jsonl'
-            else:
-                format = 'txt'  # Domyślnie txt
+        # Autodetekcja formatu z rozszerzenia pliku
+        suffix = input_path.suffix.lower()
+        if suffix == '.jsonl':
+            file_format = 'jsonl'
+        elif suffix == '.txt':
+            file_format = 'txt'
+        else:
+            print(f"Błąd: Nieobsługiwany typ pliku '{suffix}'. Obsługiwane formaty: .txt, .jsonl")
+            return
                 
-        logger.info(f"Rozpoczynam przetwarzanie pliku: {input_path} (Format: {format})")
+        logger.info(f"Rozpoczynam przetwarzanie pliku: {input_path} (Format: {file_format})")
 
         # 1. WCZYTYWANIE DANYCH
         texts = []
-        if format == 'jsonl':
+        if file_format == 'jsonl':
             with open(input_path, 'r', encoding='utf-8') as f:
                 for line in f:
                     if line.strip():
                         data = json.loads(line.strip())
                         texts.append(data.get('text', data.get('content', '')))
         
-        elif format == 'txt':
+        elif file_format == 'txt':
             with open(input_path, 'r', encoding='utf-8') as f:
-                # ZMIANA: Czytamy linia po linii. 
+                # Czytamy linia po linii. 
                 # rstrip() usuwa znak nowej linii, ale zachowuje spacje w treści
                 texts = [line.rstrip('\n') for line in f]
-                # Opcjonalnie: usuwamy puste linie, jeśli nie chcemy ich przetwarzać
-                # texts = [t for t in texts if t.strip()] 
-        
-        else:
-            raise ValueError(f"Nieobsługiwany format: {format}")
         
         logger.info(f"Wczytano {len(texts)} linii/przykładów.")
         
@@ -376,12 +384,12 @@ class AnonymizerCLI:
             logger.warning("Plik wejściowy jest pusty.")
             return
 
-        results = self.anonymizer.anonymize_batch(texts)
+        results, avg_layer_times = self.anonymizer.anonymize_batch(texts)
         
         # 3. ZAPISYWANIE WYNIKÓW
         with open(output_path, 'w', encoding='utf-8') as f:
-            if format == 'txt':
-                # ZMIANA: Zapisujemy tylko wynikowy tekst, linia po linii
+            if file_format == 'txt':
+                # Zapisujemy tylko wynikowy tekst, linia po linii
                 for result in results:
                     # Priorytet: Syntetyk > Anonimizowany > Oryginał
                     if result.synthetic:
@@ -391,7 +399,7 @@ class AnonymizerCLI:
                     
                     f.write(line_out + '\n')
             
-            else: # jsonl
+            else:  # jsonl
                 for result in results:
                     f.write(json.dumps(result.to_dict(), ensure_ascii=False) + '\n')
         
@@ -406,6 +414,11 @@ class AnonymizerCLI:
         logger.info(f"  Łączny czas: {total_time:.2f} ms")
         logger.info(f"  Średni czas/linijkę: {avg_time:.2f} ms")
         logger.info(f"  Wykryto encji: {total_entities}")
+        
+        # Wyświetl średnie czasy warstw
+        if avg_layer_times:
+            layer_times_str = ", ".join(f"{k}={v:.2f}ms" for k, v in avg_layer_times.items())
+            logger.info(f"  Średnie czasy warstw: {layer_times_str}")
 
     def process_text(self, text: str):
         return self.anonymizer.anonymize(text)
@@ -454,16 +467,14 @@ def anonymize_text(
 def anonymize_file(
     input_path: str,
     output_path: str,
-    format: str = 'jsonl',
     **kwargs
 ) -> None:
     """
     Anonimizuje plik.
     
     Args:
-        input_path: Ścieżka do pliku wejściowego
+        input_path: Ścieżka do pliku wejściowego (.txt lub .jsonl)
         output_path: Ścieżka do pliku wyjściowego
-        format: Format pliku ('jsonl' lub 'txt')
         **kwargs: Dodatkowe argumenty dla Anonymizer
     """
     cli = AnonymizerCLI()
@@ -471,17 +482,14 @@ def anonymize_file(
     class Args:
         def __init__(self, **kwargs):
             self.no_ml = kwargs.get('no_ml', False)
-            self.transformer = kwargs.get('use_transformer', False)
             self.model_path = kwargs.get('custom_model_path')
             self.morphology = kwargs.get('morphology_backend', 'spacy')
             self.synthetic = kwargs.get('generate_synthetic', False)
             self.seed = kwargs.get('synthetic_seed')
             self.intermediate = kwargs.get('include_intermediate', False)
-            self.device = kwargs.get('device', 'cpu')
-            self.workers = kwargs.get('num_workers', 1)
     
     cli.setup(Args(**kwargs))
-    cli.process_file(input_path, output_path, format)
+    cli.process_file(input_path, output_path)
 
 
 # Testy

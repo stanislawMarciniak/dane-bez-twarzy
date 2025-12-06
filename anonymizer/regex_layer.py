@@ -71,8 +71,8 @@ class DetectedEntity:
         """Konwertuje encję na token zastępczy."""
         if include_morphology and self.morphology:
             morph_str = "|".join(f"{k}={v}" for k, v in self.morphology.items())
-            return f"{{{self.entity_type.value}|{morph_str}}}"
-        return f"{{{self.entity_type.value}}}"
+            return f"[{self.entity_type.value}|{morph_str}]"
+        return f"[{self.entity_type.value}]"
     
     def __hash__(self):
         return hash((self.text, self.entity_type, self.start, self.end))
