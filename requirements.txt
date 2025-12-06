@@ -1,0 +1,40 @@
+# Dane bez Twarzy - Zależności
+# =============================
+# Instalacja: pip install -r requirements.txt
+
+# === Podstawowe ===
+# NLP dla języka polskiego
+spacy>=3.5.0
+
+# === Modele SpaCy (instalacja osobna) ===
+# python -m spacy download pl_core_news_lg
+# python -m spacy download pl_core_news_sm
+
+# === Opcjonalne - Transformers ===
+# Dla lepszej dokładności (HerBERT, PolBERT)
+transformers>=4.20.0
+torch>=1.10.0
+# sentencepiece  # Dla niektórych modeli
+
+# === Opcjonalne - Alternatywne backendy ===
+# Stanza - dokładniejsza analiza morfologiczna
+# stanza>=1.4.0
+
+# Pymorphy2 - odmiana przez przypadki
+# pymorphy2>=0.9.0
+
+# === Narzędzia developerskie ===
+# pytest>=7.0.0
+# pytest-cov>=3.0.0
+# black>=22.0.0
+# flake8>=4.0.0
+# mypy>=0.950
+
+# === Wydajność ===
+# Dla przetwarzania dużych zbiorów
+# numpy>=1.20.0
+# pandas>=1.3.0
+
+# === Opcjonalne - GPU ===
+# torch z obsługą CUDA (instalacja osobna)
+# pip install torch --index-url https://download.pytorch.org/whl/cu118
