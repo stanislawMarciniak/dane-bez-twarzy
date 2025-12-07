@@ -62,8 +62,7 @@ from .morphology import (
 
 from .synthetic_generator import (
     SyntheticDataPipeline,
-    PolishDataGenerator,
-    SyntheticEntity,
+    generate_synthetic_output,
 )
 
 from .anonymizer import (
@@ -104,7 +103,7 @@ __all__ = [
     
     # Generacja syntetyczna
     'SyntheticDataPipeline',
-    'PolishDataGenerator',
+    'generate_synthetic_output',
     
     # Narzędzia
     'NameSurnameSplitter',

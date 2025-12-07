@@ -1,7 +1,14 @@
 # morfeusz_inflector.py
 
-import morfeusz2 as m2
 from typing import Dict, List
+
+# Próba importu morfeusz2 - opcjonalna zależność
+try:
+    import morfeusz2 as m2
+    _MORFEUSZ_AVAILABLE = True
+except ImportError:
+    m2 = None
+    _MORFEUSZ_AVAILABLE = False
 
 CASE_MAP: Dict[str, str] = {
     'mianownik': 'nom',
@@ -15,6 +22,10 @@ CASE_MAP: Dict[str, str] = {
 
 class MorfeuszInflector:
     def __init__(self):
+        self.morf = None
+        if not _MORFEUSZ_AVAILABLE:
+            print("OSTRZEŻENIE: Morfeusz2 nie jest zainstalowany. Odmiana słów będzie pomijana.")
+            return
         try:
             self.morf = m2.Morfeusz()
         except Exception:
