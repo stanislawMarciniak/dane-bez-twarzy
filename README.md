@@ -96,7 +96,7 @@ python -m spacy download pl_core_news_lg
 pip install torch --index-url https://download.pytorch.org/whl/cu118
 
 # Użycie GPU
-python main.py --device cuda --input dane.jsonl --output wyniki.jsonl
+python main.py --device cuda --input dane.txt --output wyniki.txt
 ```
 
 ## Użycie

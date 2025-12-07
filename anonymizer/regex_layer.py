@@ -1,18 +1,14 @@
 """
 Warstwa Regułowa (Regex) - "Szybkie Sito"
-Wykrywa encje o stałym formacie: PESEL, email, telefon, numery kont, daty, IP.
+Wykrywa encje o stałym formacie: PESEL, email, telefon, numery kont, daty.
 
-Optymalizacje:
-- Prekompilowane wzorce
-- LRU cache dla walidacji
-- Rozszerzone wzorce dla polskich dokumentów
+Zastosowano logikę i kolejność operacji z regex.py.
 """
 
 import re
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Set, Tuple
 from enum import Enum
-from functools import lru_cache
 import hashlib
 
 
@@ -71,8 +67,8 @@ class DetectedEntity:
         """Konwertuje encję na token zastępczy."""
         if include_morphology and self.morphology:
             morph_str = "|".join(f"{k}={v}" for k, v in self.morphology.items())
-            return f"{{{self.entity_type.value}|{morph_str}}}"
-        return f"{{{self.entity_type.value}}}"
+            return f"[{self.entity_type.value}|{morph_str}]"
+        return f"[{self.entity_type.value}]"
     
     def __hash__(self):
         return hash((self.text, self.entity_type, self.start, self.end))
@@ -92,15 +88,6 @@ class RegexLayer:
     Zapewnia wysoką precyzję i szybkość dla danych strukturalnych.
     """
     
-    # Wagi kontrolne PESEL
-    PESEL_WEIGHTS = (1, 3, 7, 9, 1, 3, 7, 9, 1, 3)
-    
-    # Polskie miesiące
-    POLISH_MONTHS = (
-        'stycznia', 'lutego', 'marca', 'kwietnia', 'maja', 'czerwca',
-        'lipca', 'sierpnia', 'września', 'października', 'listopada', 'grudnia'
-    )
-    
     def __init__(self, cache_size: int = 1024):
         self._cache_size = cache_size
         self._compile_patterns()
@@ -109,163 +96,114 @@ class RegexLayer:
     def _compile_patterns(self):
         """Kompiluje wszystkie wzorce regex."""
         
-        # === PESEL ===
-        self.pesel_pattern = re.compile(r'\b(\d{11})\b')
-        
-        # === Email ===
-        self.email_pattern = re.compile(
-            r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,7}\b',
-            re.IGNORECASE
-        )
-        
-        # === Telefon ===
-        self.phone_patterns = [
-            re.compile(r'\+48[-\s]?(\d{3}[-\s]?\d{3}[-\s]?\d{3}|\d{9})'),
-            re.compile(r'\(?\d{2}\)?[-\s]?\d{3}[-\s]?\d{2}[-\s]?\d{2}'),
-            re.compile(r'(?<!\d)\d{3}[-\s]\d{3}[-\s]\d{3}(?!\d)'),
-            re.compile(r'(?:tel\.?|telefon|nr tel\.?|numer)[:\s]*(\d{9})', re.IGNORECASE),
+        # =================================================================
+        # KROK 1: Adresy
+        # =================================================================
+        # self.address_regex = re.compile(
+        #     r"\b(?i:ul\.|ulica|al\.|aleja|aleje|pl\.|plac|os\.|osiedle|skwer|rondo)\s+" # Prefiks
+        #     r"(" # Grupa 1: Nazwa ulicy
+        #         r"(?:"
+        #             # ZABEZPIECZENIE 1: Nie dopasowuj, jeśli tuż za spacją jest kolejny prefiks (np. "na os.")
+        #             r"(?!\s+(?i:ul\.|ulica|al\.|aleja|pl\.|plac|os\.|osiedle|skwer|rondo))"
+        #             r"(?:"
+        #                 r"[a-zA-ZĄĆĘŁŃÓŚŹŻąćęłńóśźż0-9][\wą-ż\.-]*" # Pierwsze słowo nazwy (może być małą literą)
+        #                 r"|"
+        #                 r"(?i:św\.|gen\.|ks\.|bp\.|abp\.|prof\.|dr\.?|im\.|al\.|pl\.)" # Tytuły
+        #                 r"|"
+        #                 r"[A-Z]\.?" # Inicjały
+        #             r")"
+        #             r"(?:[\s-]" # Separator kolejnych członów
+        #                 # ZABEZPIECZENIE 2: Powtórzenie lookahead przy każdym kolejnym członie
+        #                 r"(?!\s*(?i:ul\.|ulica|al\.|aleja|pl\.|plac|os\.|osiedle|skwer|rondo))"
+        #                 r"(?:"
+        #                    r"[A-ZĄĆĘŁŃÓŚŹŻ0-9][\wą-ż\.-]*" # Kolejne słowa muszą być z Dużej (lub cyfry)
+        #                    r"|"
+        #                    r"(?i:św\.|gen\.|ks\.|bp\.|abp\.|prof\.|dr\.?|im\.)" # Tytuły
+        #                    r"|"
+        #                    r"[A-Z]\.?" # Inicjały
+        #                    r"|"
+        #                    r"(?i:i|w|z|nad|pod|przy|ku)" # Dozwolone łączniki (małą literą)
+        #                 r")"
+        #             r")*" 
+        #         r")"
+        #     r")"
+        #     r"\s+" # Spacja przed numerem
+        #     # Grupa 2: Numer. Dodano \b na końcu, żeby nie łapać początku telefonu (np. 600-500)
+        #     r"(\d+(?:[a-zA-Z])?(?:[/-]\d+(?:[a-zA-Z])?)?(?:\s*(?i:m\.|lok\.|m|lok)\s*\d+)?)\b", 
+        #     re.IGNORECASE
+        # )
+
+        # =================================================================
+        # KROK 2: PESEL
+        # =================================================================
+        self.pesel_regex = re.compile(r"\b\d{11}\b")
+
+        # =================================================================
+        # KROK 3: Wiek
+        # =================================================================
+        # LEGACY: Model ML radzi sobie lepiej.
+        # Przechowujemy krotki (regex, group_index_of_entity), gdzie group_index to numer grupy, która jest encją
+        # self.age_patterns = [
+        #     # Wariant A: "25 lat" -> "{age} lat" (Entity: 25)
+        #     (re.compile(r"\b(\d{1,3})(\s?(?:lat|lata|l\.|r\.ż\.))", flags=re.IGNORECASE), 1),
+        #     # Wariant B: "Wiek: 25" -> "Wiek: {age}" (Entity: 25)
+        #     (re.compile(r"\b(wiek:?\s?)(\d{1,3})", flags=re.IGNORECASE), 2),
+        #     # Wariant C: "18+" -> "{age}+" (Entity: 18)
+        #     (re.compile(r"\b(\d{1,3})(\+)", flags=re.IGNORECASE), 1)
+        # ]
+
+        # =================================================================
+        # KROK 4: Reszta prostych regexów
+        # =================================================================
+        # LEGACY: Model ML radzi sobie lepiej z username, secret, dokumentami i datami.
+        self.simple_patterns = [
+            (EntityType.EMAIL, re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b")),
+            
+            # POPRAWKA 1: Username
+            # Wymusza, by ostatni znak NIE był kropką (żeby nie zjadać kropki kończącej zdanie)
+            # (EntityType.USERNAME, re.compile(r"(?<![\w])@[\w](?:[\w._-]*[\w_-])?")), 
+            
+            # (EntityType.SECRET, re.compile(r"Bearer\s+[a-zA-Z0-9\-\._~+/]+=*")),
+            (EntityType.BANK_ACCOUNT, re.compile(r"\b(?i:PL)[ ]?\d{2}(?:[ ]?\d{4}){6}\b")),  # Full Polish IBAN: PL dd dddd dddd dddd dddd dddd dddd
+            (EntityType.BANK_ACCOUNT, re.compile(r"\b\d{4}[ ]\d{4}[ ]\d{4}[ ]\d{4}\b")),  # 4x4 digits with spaces: 1234 0234 9054 0012
+            # (EntityType.CREDIT_CARD_NUMBER, re.compile(r"(?<!\d)(?<!\d[ -])(?:(?:\d{4} \d{4} \d{4} \d{4})|(?:\d{4}-\d{4}-\d{4}-\d{4}))(?!\d)")),
+            
+            # POPRAWKA 2: Telefon
+            # - Accepts any international prefix (+1 to +999, or 00X to 00XXX)
+            # - WITHOUT prefix: requires at least one separator to avoid matching random 9-digit numbers
+            
+            # Mobile WITH international prefix (separators optional): +48 123456789 or +1 555 123 4567
+            (EntityType.PHONE, re.compile(r"(?<!\w)(?:(?:\+|00)\d{1,3}[ .-]?|\(\+?\d{1,3}\)[ .-]?)\d{3}[ .-]?\d{3}[ .-]?\d{3}(?!\w)")),
+            # Mobile WITHOUT prefix (separators REQUIRED): 123 456 789 or 123-456-789
+            (EntityType.PHONE, re.compile(r"(?<!\w)\d{3}[ .-]\d{3}[ .-]\d{3}(?!\w)")),
+            # Landline WITH prefix: +48 22 123 45 67
+            (EntityType.PHONE, re.compile(r"(?<!\w)(?:(?:\+|00)\d{1,3}[ .-]?|\(\+?\d{1,3}\)[ .-]?)\d{2}[ .-]?\d{3}[ .-]?\d{2}[ .-]?\d{2}(?!\w)")),
+            # Landline WITHOUT prefix (separators REQUIRED): 22 123 45 67 or (22) 123-45-67
+            (EntityType.PHONE, re.compile(r"(?<!\w)\(?\d{2}\)?[ .-]\d{3}[ .-]\d{2}[ .-]\d{2}(?!\w)"))
+
+            # (EntityType.DOCUMENT_NUMBER, re.compile(r"\b[A-Z]{3}\s?\d{6}\b", re.IGNORECASE)), # Dowód
+            # (EntityType.DOCUMENT_NUMBER, re.compile(r"\b[A-Z]{2}\s?\d{7}\b")), # Paszport
+            # (EntityType.DOCUMENT_NUMBER, re.compile(r"\b[A-HJ-NPR-Z0-9]{17}\b")), # VIN
+            # (EntityType.DATE, re.compile(r"\b\d{4}[-./]\d{1,2}[-./]\d{1,2}\b|\b\d{1,2}[-./]\d{1,2}[-./]\d{4}\b")),
         ]
-        
-        # === Konto bankowe ===
-        self.bank_account_patterns = [
-            re.compile(r'\bPL[-\s]?(\d{2}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4})\b'),
-            re.compile(r'\b(\d{2}[-\s]\d{4}[-\s]\d{4}[-\s]\d{4}[-\s]\d{4}[-\s]\d{4}[-\s]\d{4})\b'),
-            re.compile(r'(?:konto|rachunek|nr konta)[:\s]*(\d{26})\b', re.IGNORECASE),
-        ]
-        
-        # === Karta kredytowa ===
-        self.credit_card_patterns = [
-            re.compile(r'\b(\d{4}[-\s]\d{4}[-\s]\d{4}[-\s]\d{4})\b'),
-            re.compile(r'(?:kart[ay]|visa|mastercard)[:\s]*(\d{16})\b', re.IGNORECASE),
-        ]
-        
-        # === Daty ===
-        self.date_patterns = [
-            re.compile(r'\b(\d{1,2})[.\-/](\d{1,2})[.\-/](\d{4})\b'),
-            re.compile(r'\b(\d{4})[.\-/](\d{1,2})[.\-/](\d{1,2})\b'),
-            re.compile(r'\b(\d{1,2})[.\-/](\d{1,2})[.\-/](\d{2})\b'),
-            re.compile(
-                r'\b(\d{1,2})\s+(' + '|'.join(self.POLISH_MONTHS) + r')\s+(\d{4})(\s*r\.?)?\b',
-                re.IGNORECASE
-            ),
-        ]
-        
-        self.dob_context = re.compile(
-            r'(urodzony|urodzona|urodzenia|ur\.|data ur|dob)[:\s]*',
-            re.IGNORECASE
-        )
-        
-        # === Dokumenty ===
-        self.document_patterns = [
-            re.compile(r'\b([A-Z]{3}\d{6})\b'),
-            re.compile(r'\b([A-Z]{2}\d{7})\b'),
-            re.compile(r'\b(\d{5}/\d{2}/\d{4})\b'),
-            re.compile(r'(?:dowód|paszport|prawo jazdy)[:\s]*([A-Z0-9]{7,9})\b', re.IGNORECASE),
-        ]
-        
-        # === Wiek ===
-        self.age_patterns = [
-            re.compile(r'\b(\d{1,3})\s*[-]?\s*(lat|lata|rok|roku|letni[aey]?|latek)\b', re.IGNORECASE),
-            re.compile(r'\b(?:wiek|lat)[:\s]+(\d{1,3})\b', re.IGNORECASE),
-            re.compile(r'\bw\s+wieku\s+(\d{1,3})\s*(lat|lata)?\b', re.IGNORECASE),
-        ]
-        
-        # === Kod pocztowy ===
-        self.postal_code_pattern = re.compile(r'\b(\d{2}-\d{3})\b')
-        
-        # === Adresy ===
-        self.address_patterns = [
-            re.compile(
-                r'(?:ul\.?|ulica|al\.?|aleja|os\.?|osiedle|pl\.?|plac)\s+[A-ZĄĆĘŁŃÓŚŹŻ][a-ząćęłńóśźż]+(?:\s+[A-ZĄĆĘŁŃÓŚŹŻ][a-ząćęłńóśźż]+)?\s+\d+(?:[a-z])?(?:\s*/\s*\d+)?',
-                re.IGNORECASE
-            ),
-        ]
-        
-        # === IP ===
-        self.ip_pattern = re.compile(
-            r'\b((?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\b'
-        )
-        
-        # === Sekrety ===
-        self.secret_patterns = [
-            re.compile(r'(?:hasło|password|pass|pwd)[:\s]+["\']?(\S{4,})["\']?', re.IGNORECASE),
-            re.compile(r'(?:api[_\s]?key|token|klucz)[:\s]+["\']?(\S{8,})["\']?', re.IGNORECASE),
-        ]
-        
-        # === Username ===
-        self.username_patterns = [
-            re.compile(r'(?:login|użytkownik|user|nick)[:\s]+["\']?(\S{3,})["\']?', re.IGNORECASE),
-            re.compile(r'@([A-Za-z0-9_]{3,30})\b'),
-        ]
-        
-        # === Płeć ===
-        self.sex_patterns = [
-            re.compile(r'(?:płeć|sex|gender)[:\s]+(mężczyzna|kobieta|m|k)\b', re.IGNORECASE),
-        ]
-    
-    @lru_cache(maxsize=10000)
-    def _validate_pesel(self, pesel: str) -> bool:
-        """Waliduje sumę kontrolną PESEL."""
-        if len(pesel) != 11 or not pesel.isdigit():
+
+    def _validate_pesel_checksum(self, pesel: str) -> bool:
+        """
+        Walidacja matematyczna numeru PESEL.
+        """
+        if len(pesel) != 11:
             return False
         
-        digits = tuple(int(d) for d in pesel)
-        checksum = sum(d * w for d, w in zip(digits[:10], self.PESEL_WEIGHTS)) % 10
-        control = (10 - checksum) % 10
+        weights = [1, 3, 7, 9, 1, 3, 7, 9, 1, 3]
         
-        return control == digits[10]
-    
-    @lru_cache(maxsize=10000)
-    def _validate_credit_card(self, number: str) -> bool:
-        """Waliduje numer karty algorytmem Luhna."""
-        digits = [int(d) for d in re.sub(r'[-\s]', '', number)]
-        if len(digits) != 16:
+        try:
+            checksum = sum(int(pesel[i]) * weights[i] for i in range(10))
+            control_digit = (10 - (checksum % 10)) % 10
+            
+            return control_digit == int(pesel[10])
+        except ValueError:
             return False
-        
-        checksum = 0
-        for i, d in enumerate(reversed(digits)):
-            if i % 2 == 1:
-                d *= 2
-                if d > 9:
-                    d -= 9
-            checksum += d
-        
-        return checksum % 10 == 0
-    
-    @lru_cache(maxsize=1000)
-    def _validate_ip(self, ip: str) -> bool:
-        """Waliduje adres IP."""
-        parts = ip.split('.')
-        if len(parts) != 4:
-            return False
-        
-        for part in parts:
-            try:
-                num = int(part)
-                if num < 0 or num > 255:
-                    return False
-            except ValueError:
-                return False
-        return True
-    
-    def _is_valid_date(self, day: int, month: int, year: int) -> bool:
-        """Sprawdza czy data jest prawidłowa."""
-        if month < 1 or month > 12 or day < 1 or day > 31:
-            return False
-        
-        if year < 100:
-            year = 1900 + year if year > 30 else 2000 + year
-        
-        if year < 1900 or year > 2100:
-            return False
-        
-        days_in_month = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-        
-        if year % 4 == 0 and (year % 100 != 0 or year % 400 == 0):
-            days_in_month[1] = 29
-        
-        return day <= days_in_month[month - 1]
-    
+
     def _get_text_hash(self, text: str) -> str:
         return hashlib.md5(text.encode()).hexdigest()
     
@@ -288,232 +226,104 @@ class RegexLayer:
         entities: List[DetectedEntity] = []
         occupied_ranges: Set[Tuple[int, int]] = set()
         
+        def is_occupied(start: int, end: int) -> bool:
+            for o_start, o_end in occupied_ranges:
+                # Check for overlap
+                if not (end <= o_start or start >= o_end):
+                    return True
+            return False
+        
         def add_entity(entity: DetectedEntity) -> bool:
-            for start, end in occupied_ranges:
-                if not (entity.end <= start or entity.start >= end):
-                    return False
+            if is_occupied(entity.start, entity.end):
+                return False
             entities.append(entity)
             occupied_ranges.add((entity.start, entity.end))
             return True
-        
-        # PESEL
-        for match in self.pesel_pattern.finditer(text):
-            pesel = match.group(1)
-            if self._validate_pesel(pesel):
+
+        # =================================================================
+        # KROK 1: Adresy
+        # =================================================================
+        # LEGACY: Model ML radzi sobie lepiej z adresami, wiekiem, username, secret, dokumentami i datami.
+        # for match in self.address_regex.finditer(text):
+        #     add_entity(DetectedEntity(
+        #         text=match.group(),
+        #         entity_type=EntityType.ADDRESS,
+        #         start=match.start(),
+        #         end=match.end(),
+        #         confidence=0.90,
+        #         source='regex'
+        #     ))
+
+        # =================================================================
+        # KROK 2: PESEL z Walidacją
+        # =================================================================
+        for match in self.pesel_regex.finditer(text):
+            pesel = match.group()
+            if self._validate_pesel_checksum(pesel):
                 add_entity(DetectedEntity(
                     text=pesel,
                     entity_type=EntityType.PESEL,
-                    start=match.start(1),
-                    end=match.end(1),
+                    start=match.start(),
+                    end=match.end(),
                     confidence=0.99,
                     source='regex'
                 ))
-        
-        # Email
-        for match in self.email_pattern.finditer(text):
-            add_entity(DetectedEntity(
-                text=match.group(),
-                entity_type=EntityType.EMAIL,
-                start=match.start(),
-                end=match.end(),
-                confidence=0.98,
-                source='regex'
-            ))
-        
-        # Telefon
-        for pattern in self.phone_patterns:
+
+        # =================================================================
+        # KROK 3: Wiek
+        # =================================================================
+        # LEGACY: Model ML radzi sobie lepiej.
+        # for pattern, group_idx in self.age_patterns:
+        #     for match in pattern.finditer(text):
+        #         # Dla wieku, encją jest tylko liczba, nie cały kontekst (zgodnie z logiką regex.py)
+        #         try:
+        #             start = match.start(group_idx)
+        #             end = match.end(group_idx)
+        #             val = match.group(group_idx)
+        #             
+        #             if is_occupied(start, end):
+        #                 continue
+        #                 
+        #             add_entity(DetectedEntity(
+        #                 text=val,
+        #                 entity_type=EntityType.AGE,
+        #                 start=start,
+        #                 end=end,
+        #                 confidence=0.85,
+        #                 source='regex'
+        #             ))
+        #         except IndexError:
+        #             continue
+
+        # =================================================================
+        # KROK 4: Reszta prostych regexów
+        # =================================================================
+        for entity_type, pattern in self.simple_patterns:
             for match in pattern.finditer(text):
-                add_entity(DetectedEntity(
-                    text=match.group(),
-                    entity_type=EntityType.PHONE,
-                    start=match.start(),
-                    end=match.end(),
-                    confidence=0.90,
-                    source='regex'
-                ))
-        
-        # Konto bankowe
-        for pattern in self.bank_account_patterns:
-            for match in pattern.finditer(text):
-                add_entity(DetectedEntity(
-                    text=match.group(),
-                    entity_type=EntityType.BANK_ACCOUNT,
-                    start=match.start(),
-                    end=match.end(),
-                    confidence=0.95,
-                    source='regex'
-                ))
-        
-        # Karta kredytowa
-        for pattern in self.credit_card_patterns:
-            for match in pattern.finditer(text):
-                number = re.sub(r'[-\s]', '', match.group(1) if match.lastindex else match.group())
-                if len(number) == 16 and self._validate_credit_card(number):
-                    add_entity(DetectedEntity(
-                        text=match.group(),
-                        entity_type=EntityType.CREDIT_CARD_NUMBER,
-                        start=match.start(),
-                        end=match.end(),
-                        confidence=0.97,
-                        source='regex'
-                    ))
-        
-        # Adresy
-        for pattern in self.address_patterns:
-            for match in pattern.finditer(text):
-                add_entity(DetectedEntity(
-                    text=match.group(),
-                    entity_type=EntityType.ADDRESS,
-                    start=match.start(),
-                    end=match.end(),
-                    confidence=0.85,
-                    source='regex'
-                ))
-        
-        # Daty
-        for i, pattern in enumerate(self.date_patterns):
-            for match in pattern.finditer(text):
-                context_start = max(0, match.start() - 30)
-                context = text[context_start:match.start()].lower()
-                
-                is_dob = bool(self.dob_context.search(context))
-                entity_type = EntityType.DATE_OF_BIRTH if is_dob else EntityType.DATE
-                
-                if i < 3:
-                    try:
-                        groups = match.groups()
-                        if i == 1:
-                            year, month, day = int(groups[0]), int(groups[1]), int(groups[2])
-                        else:
-                            day, month, year = int(groups[0]), int(groups[1]), int(groups[2])
-                        
-                        if not self._is_valid_date(day, month, year):
-                            continue
-                    except (ValueError, IndexError):
-                        continue
-                
                 add_entity(DetectedEntity(
                     text=match.group(),
                     entity_type=entity_type,
                     start=match.start(),
                     end=match.end(),
-                    confidence=0.85 if is_dob else 0.80,
-                    source='regex'
-                ))
-        
-        # Dokumenty
-        for pattern in self.document_patterns:
-            for match in pattern.finditer(text):
-                add_entity(DetectedEntity(
-                    text=match.group(),
-                    entity_type=EntityType.DOCUMENT_NUMBER,
-                    start=match.start(),
-                    end=match.end(),
-                    confidence=0.88,
-                    source='regex'
-                ))
-        
-        # Wiek
-        for pattern in self.age_patterns:
-            for match in pattern.finditer(text):
-                try:
-                    age_value = int(match.group(1))
-                    if 0 < age_value < 130:
-                        add_entity(DetectedEntity(
-                            text=match.group(),
-                            entity_type=EntityType.AGE,
-                            start=match.start(),
-                            end=match.end(),
-                            confidence=0.80,
-                            source='regex'
-                        ))
-                except (ValueError, IndexError):
-                    pass
-        
-        # Kod pocztowy
-        for match in self.postal_code_pattern.finditer(text):
-            already_covered = any(
-                e.start <= match.start() and e.end >= match.end()
-                for e in entities if e.entity_type == EntityType.ADDRESS
-            )
-            if not already_covered:
-                add_entity(DetectedEntity(
-                    text=match.group(),
-                    entity_type=EntityType.ADDRESS,
-                    start=match.start(),
-                    end=match.end(),
-                    confidence=0.75,
-                    source='regex'
-                ))
-        
-        # IP
-        for match in self.ip_pattern.finditer(text):
-            ip = match.group()
-            if self._validate_ip(ip):
-                add_entity(DetectedEntity(
-                    text=ip,
-                    entity_type=EntityType.SECRET,
-                    start=match.start(),
-                    end=match.end(),
-                    confidence=0.92,
-                    source='regex'
-                ))
-        
-        # Sekrety
-        for pattern in self.secret_patterns:
-            for match in pattern.finditer(text):
-                add_entity(DetectedEntity(
-                    text=match.group(),
-                    entity_type=EntityType.SECRET,
-                    start=match.start(),
-                    end=match.end(),
-                    confidence=0.88,
-                    source='regex'
-                ))
-        
-        # Username
-        for pattern in self.username_patterns:
-            for match in pattern.finditer(text):
-                add_entity(DetectedEntity(
-                    text=match.group(),
-                    entity_type=EntityType.USERNAME,
-                    start=match.start(),
-                    end=match.end(),
-                    confidence=0.75,
-                    source='regex'
-                ))
-        
-        # Płeć
-        for pattern in self.sex_patterns:
-            for match in pattern.finditer(text):
-                add_entity(DetectedEntity(
-                    text=match.group(),
-                    entity_type=EntityType.SEX,
-                    start=match.start(),
-                    end=match.end(),
                     confidence=0.90,
                     source='regex'
                 ))
-        
+
         entities.sort(key=lambda e: (e.start, -e.end))
         
         if use_cache:
-            text_hash = self._get_text_hash(text)
             self._result_cache[text_hash] = entities.copy()
             if len(self._result_cache) > self._cache_size:
-                keys_to_remove = list(self._result_cache.keys())[:len(self._result_cache) - self._cache_size]
-                for key in keys_to_remove:
-                    del self._result_cache[key]
+                # Simple cleanup
+                keys = list(self._result_cache.keys())
+                for k in keys[:-self._cache_size]:
+                    del self._result_cache[k]
         
         return entities
     
     def clear_cache(self):
         """Czyści cache."""
         self._result_cache.clear()
-        self._validate_pesel.cache_clear()
-        self._validate_credit_card.cache_clear()
-        self._validate_ip.cache_clear()
-
 
 if __name__ == "__main__":
     layer = RegexLayer()
