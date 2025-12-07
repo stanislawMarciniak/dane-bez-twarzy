@@ -99,39 +99,44 @@ class RegexLayer:
         # =================================================================
         # KROK 1: Adresy
         # =================================================================
-        # self.address_regex = re.compile(
-        #     r"\b(?i:ul\.|ulica|al\.|aleja|aleje|pl\.|plac|os\.|osiedle|skwer|rondo)\s+" # Prefiks
-        #     r"(" # Grupa 1: Nazwa ulicy
-        #         r"(?:"
-        #             # ZABEZPIECZENIE 1: Nie dopasowuj, jeśli tuż za spacją jest kolejny prefiks (np. "na os.")
-        #             r"(?!\s+(?i:ul\.|ulica|al\.|aleja|pl\.|plac|os\.|osiedle|skwer|rondo))"
-        #             r"(?:"
-        #                 r"[a-zA-ZĄĆĘŁŃÓŚŹŻąćęłńóśźż0-9][\wą-ż\.-]*" # Pierwsze słowo nazwy (może być małą literą)
-        #                 r"|"
-        #                 r"(?i:św\.|gen\.|ks\.|bp\.|abp\.|prof\.|dr\.?|im\.|al\.|pl\.)" # Tytuły
-        #                 r"|"
-        #                 r"[A-Z]\.?" # Inicjały
-        #             r")"
-        #             r"(?:[\s-]" # Separator kolejnych członów
-        #                 # ZABEZPIECZENIE 2: Powtórzenie lookahead przy każdym kolejnym członie
-        #                 r"(?!\s*(?i:ul\.|ulica|al\.|aleja|pl\.|plac|os\.|osiedle|skwer|rondo))"
-        #                 r"(?:"
-        #                    r"[A-ZĄĆĘŁŃÓŚŹŻ0-9][\wą-ż\.-]*" # Kolejne słowa muszą być z Dużej (lub cyfry)
-        #                    r"|"
-        #                    r"(?i:św\.|gen\.|ks\.|bp\.|abp\.|prof\.|dr\.?|im\.)" # Tytuły
-        #                    r"|"
-        #                    r"[A-Z]\.?" # Inicjały
-        #                    r"|"
-        #                    r"(?i:i|w|z|nad|pod|przy|ku)" # Dozwolone łączniki (małą literą)
-        #                 r")"
-        #             r")*" 
-        #         r")"
-        #     r")"
-        #     r"\s+" # Spacja przed numerem
-        #     # Grupa 2: Numer. Dodano \b na końcu, żeby nie łapać początku telefonu (np. 600-500)
-        #     r"(\d+(?:[a-zA-Z])?(?:[/-]\d+(?:[a-zA-Z])?)?(?:\s*(?i:m\.|lok\.|m|lok)\s*\d+)?)\b", 
-        #     re.IGNORECASE
-        # )
+        # Zmiany:
+        # 1. Usunięto kropkę z klasy znaków [\wą-ż-], aby nie zjadać kropki kończącej zdanie.
+        # 2. Dodano obsługę skrótów [a-zA-Z]{1,3}\. (np. mjr., św., al.).
+        # 3. Dodano obsługę cyfr w nazwie ulicy TYLKO jeśli są one częścią nazwy (np. 3 Maja),
+        #    sprawdzając lookaheadem czy po cyfrze następuje Wielka Litera (np. 3 Maja -> OK, 5 i ma -> NIE).
+        self.address_regex = re.compile(
+            r"\b(?i:ul\.|ulica|al\.|aleja|aleje|pl\.|plac|os\.|osiedle|skwer|rondo)\s+"  # Prefiks
+            r"("  # Grupa 1: Nazwa ulicy
+                r"(?:"
+                    # ZABEZPIECZENIE 1: Nie dopasowuj, jeśli tuż za spacją jest kolejny prefiks (np. "na os.")
+                    r"(?!\s+(?i:ul\.|ulica|al\.|aleja|pl\.|plac|os\.|osiedle|skwer|rondo))"
+                    r"(?:"
+                        r"[a-zA-ZĄĆĘŁŃÓŚŹŻąćęłńóśźż0-9][\wą-ż-]*"  # Pierwsze słowo nazwy (może być małą literą)
+                        r"|"
+                        r"(?i:św\.|gen\.|ks\.|bp\.|abp\.|prof\.|dr\.?|im\.|al\.|pl\.)"  # Tytuły
+                        r"|"
+                        r"[A-Z]\.?"  # Inicjały
+                    r")"
+                    r"(?:[\s-]"  # Separator kolejnych członów
+                        # ZABEZPIECZENIE 2: Powtórzenie lookahead przy każdym kolejnym członie
+                        r"(?!\s*(?i:ul\.|ulica|al\.|aleja|pl\.|plac|os\.|osiedle|skwer|rondo))"
+                        r"(?:"
+                           r"[A-ZĄĆĘŁŃÓŚŹŻ0-9][\wą-ż-]*"  # Kolejne słowa muszą być z Dużej (lub cyfry)
+                           r"|"
+                           r"(?i:św\.|gen\.|ks\.|bp\.|abp\.|prof\.|dr\.?|im\.)"  # Tytuły
+                           r"|"
+                           r"[A-Z]\.?"  # Inicjały
+                           r"|"
+                           r"(?i:i|w|z|nad|pod|przy|ku)"  # Dozwolone łączniki (małą literą)
+                        r")"
+                    r")*"
+                r")"
+            r")"
+            r"\s+"  # Spacja przed numerem
+            # Grupa 2: Numer. Dodano \b na końcu, żeby nie łapać początku telefonu (np. 600-500)
+            r"(\d+(?:[a-zA-Z])?(?:[/-]\d+(?:[a-zA-Z])?)?(?:\s*(?i:m\.|lok\.|m|lok)\s*\d+)?)\b",
+            re.IGNORECASE
+        )
 
         # =================================================================
         # KROK 2: PESEL
@@ -243,16 +248,15 @@ class RegexLayer:
         # =================================================================
         # KROK 1: Adresy
         # =================================================================
-        # LEGACY: Model ML radzi sobie lepiej z adresami, wiekiem, username, secret, dokumentami i datami.
-        # for match in self.address_regex.finditer(text):
-        #     add_entity(DetectedEntity(
-        #         text=match.group(),
-        #         entity_type=EntityType.ADDRESS,
-        #         start=match.start(),
-        #         end=match.end(),
-        #         confidence=0.90,
-        #         source='regex'
-        #     ))
+        for match in self.address_regex.finditer(text):
+            add_entity(DetectedEntity(
+                text=match.group(),
+                entity_type=EntityType.ADDRESS,
+                start=match.start(),
+                end=match.end(),
+                confidence=0.90,
+                source='regex'
+            ))
 
         # =================================================================
         # KROK 2: PESEL z Walidacją
