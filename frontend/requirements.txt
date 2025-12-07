@@ -1,0 +1,3 @@
+# Frontend dependencies for Dane bez Twarzy
+flask>=2.3.0
+

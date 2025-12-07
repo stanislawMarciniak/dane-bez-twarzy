@@ -1,0 +1,905 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dane bez Twarzy - Anonimizacja</title>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            /* Light theme palette - warm cream tones */
+            --bg-primary: #faf8f5;
+            --bg-secondary: #ffffff;
+            --bg-tertiary: #f5f2ed;
+            --bg-hover: #ebe8e3;
+            
+            --text-primary: #1a1a1a;
+            --text-secondary: #5c5c5c;
+            --text-muted: #8a8a8a;
+            
+            --border-color: #e5e2dd;
+            --border-light: #f0ede8;
+            
+            /* Token colors - soft pastels */
+            --token-name: #e8f5e9;
+            --token-name-border: #81c784;
+            --token-name-text: #2e7d32;
+            
+            --token-address: #fff3e0;
+            --token-address-border: #ffb74d;
+            --token-address-text: #e65100;
+            
+            --token-document: #e3f2fd;
+            --token-document-border: #64b5f6;
+            --token-document-text: #1565c0;
+            
+            --token-contact: #f3e5f5;
+            --token-contact-border: #ba68c8;
+            --token-contact-text: #7b1fa2;
+            
+            --token-sensitive: #ffebee;
+            --token-sensitive-border: #e57373;
+            --token-sensitive-text: #c62828;
+            
+            --token-work: #e0f7fa;
+            --token-work-border: #4dd0e1;
+            --token-work-text: #00838f;
+            
+            --token-other: #fafafa;
+            --token-other-border: #bdbdbd;
+            --token-other-text: #424242;
+            
+            /* Accent colors */
+            --accent-primary: #ff6b35;
+            --accent-secondary: #ffa726;
+            --accent-success: #66bb6a;
+            
+            /* Shadows */
+            --shadow-sm: 0 1px 3px rgba(0,0,0,0.06);
+            --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+            --shadow-lg: 0 8px 24px rgba(0,0,0,0.12);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+
+        /* Header */
+        .header {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+            padding: 16px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: var(--shadow-sm);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 700;
+            font-size: 20px;
+            color: var(--text-primary);
+        }
+
+        .logo-icon {
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 18px;
+        }
+
+        .mode-badge {
+            background: var(--bg-tertiary);
+            color: var(--text-secondary);
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 500;
+        }
+
+        /* Filter buttons */
+        .filter-buttons {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .filter-btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-family: inherit;
+        }
+
+        .filter-btn.name {
+            background: var(--token-name);
+            color: var(--token-name-text);
+            border: 1px solid var(--token-name-border);
+        }
+
+        .filter-btn.address {
+            background: var(--token-address);
+            color: var(--token-address-text);
+            border: 1px solid var(--token-address-border);
+        }
+
+        .filter-btn.document {
+            background: var(--token-document);
+            color: var(--token-document-text);
+            border: 1px solid var(--token-document-border);
+        }
+
+        .filter-btn.contact {
+            background: var(--token-contact);
+            color: var(--token-contact-text);
+            border: 1px solid var(--token-contact-border);
+        }
+
+        .filter-btn.sensitive {
+            background: var(--token-sensitive);
+            color: var(--token-sensitive-text);
+            border: 1px solid var(--token-sensitive-border);
+        }
+
+        .filter-btn.work {
+            background: var(--token-work);
+            color: var(--token-work-text);
+            border: 1px solid var(--token-work-border);
+        }
+
+        .filter-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: var(--shadow-sm);
+        }
+
+        .filter-btn.active {
+            box-shadow: var(--shadow-md);
+            transform: translateY(-2px);
+        }
+
+        /* Navigation controls */
+        .nav-controls {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .nav-arrows {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: var(--bg-tertiary);
+            padding: 6px 12px;
+            border-radius: 25px;
+        }
+
+        .nav-btn {
+            width: 32px;
+            height: 32px;
+            border: none;
+            background: var(--bg-secondary);
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+            color: var(--text-secondary);
+        }
+
+        .nav-btn:hover {
+            background: var(--accent-primary);
+            color: white;
+        }
+
+        .nav-counter {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+            min-width: 60px;
+            text-align: center;
+        }
+
+        /* Main content */
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 0;
+            height: calc(100vh - 140px);
+        }
+
+        .column {
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid var(--border-color);
+            background: var(--bg-secondary);
+        }
+
+        .column:last-child {
+            border-right: none;
+        }
+
+        .column-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border-color);
+            background: var(--bg-tertiary);
+        }
+
+        .column-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+        }
+
+        .column-subtitle {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .column-content {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            font-size: 15px;
+            line-height: 1.7;
+        }
+
+        .column-content.input-area {
+            padding: 0;
+        }
+
+        .input-textarea {
+            width: 100%;
+            height: 100%;
+            border: none;
+            resize: none;
+            padding: 20px;
+            font-family: inherit;
+            font-size: 15px;
+            line-height: 1.7;
+            color: var(--text-primary);
+            background: var(--bg-secondary);
+        }
+
+        .input-textarea:focus {
+            outline: none;
+        }
+
+        .input-textarea::placeholder {
+            color: var(--text-muted);
+        }
+
+        /* Token highlighting */
+        .token {
+            display: inline;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .token:hover {
+            transform: scale(1.02);
+            box-shadow: var(--shadow-sm);
+        }
+
+        .token.highlighted {
+            box-shadow: 0 0 0 2px var(--accent-primary);
+        }
+
+        .token-name, .token-surname {
+            background: var(--token-name);
+            color: var(--token-name-text);
+            border: 1px solid var(--token-name-border);
+        }
+
+        .token-address, .token-city {
+            background: var(--token-address);
+            color: var(--token-address-text);
+            border: 1px solid var(--token-address-border);
+        }
+
+        .token-document-number, .token-pesel, .token-bank-account, .token-credit-card-number {
+            background: var(--token-document);
+            color: var(--token-document-text);
+            border: 1px solid var(--token-document-border);
+        }
+
+        .token-email, .token-phone {
+            background: var(--token-contact);
+            color: var(--token-contact-text);
+            border: 1px solid var(--token-contact-border);
+        }
+
+        .token-health, .token-religion, .token-political-view, .token-ethnicity, .token-sexual-orientation {
+            background: var(--token-sensitive);
+            color: var(--token-sensitive-text);
+            border: 1px solid var(--token-sensitive-border);
+        }
+
+        .token-company, .token-school-name, .token-job-title {
+            background: var(--token-work);
+            color: var(--token-work-text);
+            border: 1px solid var(--token-work-border);
+        }
+
+        .token-date, .token-date-of-birth, .token-age, .token-sex, .token-relative,
+        .token-username, .token-secret {
+            background: var(--token-other);
+            color: var(--token-other-text);
+            border: 1px solid var(--token-other-border);
+        }
+
+        /* Footer / Status bar */
+        .footer {
+            background: var(--bg-secondary);
+            border-top: 1px solid var(--border-color);
+            padding: 12px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 13px;
+            color: var(--text-muted);
+        }
+
+        .footer-left {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .footer-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .footer-btn {
+            padding: 6px 12px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-secondary);
+            border-radius: 6px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-family: inherit;
+            color: var(--text-secondary);
+        }
+
+        .footer-btn:hover {
+            background: var(--bg-tertiary);
+            border-color: var(--text-muted);
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--accent-success);
+        }
+
+        .status-dot.processing {
+            background: var(--accent-secondary);
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Process button */
+        .process-btn {
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            color: white;
+            border: none;
+            padding: 10px 24px;
+            border-radius: 25px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-family: inherit;
+            box-shadow: var(--shadow-md);
+        }
+
+        .process-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .process-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* Keyboard shortcuts hint */
+        .shortcut-hint {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        kbd {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 2px 6px;
+            font-size: 11px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* Empty state */
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: var(--text-muted);
+            text-align: center;
+            padding: 40px;
+        }
+
+        .empty-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+
+        .empty-text {
+            font-size: 15px;
+            line-height: 1.6;
+        }
+
+        /* Stats badge */
+        .stats-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: var(--bg-tertiary);
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        /* Entity list panel */
+        .entity-panel {
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+            padding: 12px;
+            margin-top: 16px;
+        }
+
+        .entity-panel-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .entity-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .entity-item {
+            font-size: 12px;
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        /* Loading spinner */
+        .spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--border-color);
+            border-top-color: var(--accent-primary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Responsive */
+        @media (max-width: 1200px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+
+            .column {
+                border-right: none;
+                border-bottom: 1px solid var(--border-color);
+                max-height: 300px;
+            }
+        }
+
+        /* Scrollbar styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--bg-tertiary);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--border-color);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--text-muted);
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="header-left">
+            <div class="logo">
+                <div class="logo-icon">🔒</div>
+                <span>Dane bez Twarzy</span>
+            </div>
+            <span class="mode-badge">Tryb pełnoekranowy</span>
+        </div>
+        
+        <div class="filter-buttons">
+            <button class="filter-btn name active" data-filter="name,surname" onclick="toggleFilter(this)">Imię</button>
+            <button class="filter-btn address active" data-filter="address,city" onclick="toggleFilter(this)">Adres</button>
+            <button class="filter-btn document active" data-filter="document-number,pesel,bank-account,credit-card-number" onclick="toggleFilter(this)">Nr dokumentu</button>
+            <button class="filter-btn contact active" data-filter="email,phone" onclick="toggleFilter(this)">Kontakt</button>
+            <button class="filter-btn sensitive active" data-filter="health,religion,political-view,ethnicity,sexual-orientation" onclick="toggleFilter(this)">Dane wrażliwe</button>
+            <button class="filter-btn work active" data-filter="company,school-name,job-title" onclick="toggleFilter(this)">Praca</button>
+        </div>
+
+        <div class="nav-controls">
+            <div class="nav-arrows">
+                <button class="nav-btn" onclick="navigateToken(-1)" title="Poprzedni token">←</button>
+                <span class="nav-counter" id="tokenCounter">0 / 0</span>
+                <button class="nav-btn" onclick="navigateToken(1)" title="Następny token">→</button>
+            </div>
+            <button class="process-btn" onclick="processText()" id="processBtn">
+                Anonimizuj
+            </button>
+        </div>
+    </header>
+
+    <main class="main-content">
+        <div class="column">
+            <div class="column-header">
+                <div class="column-title">Tekst oryginalny</div>
+                <div class="column-subtitle">Surowe dane wejściowe</div>
+            </div>
+            <div class="column-content input-area">
+                <textarea 
+                    class="input-textarea" 
+                    id="inputText" 
+                    placeholder="Wpisz lub wklej tekst do anonimizacji...
+
+Przykład:
+Nazywam się Jan Kowalski, mój PESEL to 90010112345. 
+Mieszkam w Warszawie przy ulicy Długiej 5. 
+Mój email to jan.kowalski@gmail.com, telefon: +48 123 456 789."
+                ></textarea>
+            </div>
+        </div>
+
+        <div class="column">
+            <div class="column-header">
+                <div class="column-title">Tekst zanonimizowany</div>
+                <div class="column-subtitle">Tokeny zastępujące dane</div>
+            </div>
+            <div class="column-content" id="anonymizedContent">
+                <div class="empty-state">
+                    <div class="empty-icon">🔐</div>
+                    <div class="empty-text">
+                        Wprowadź tekst po lewej stronie<br>
+                        i kliknij "Anonimizuj"
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="column">
+            <div class="column-header">
+                <div class="column-title">Dane syntetyczne</div>
+                <div class="column-subtitle">Wygenerowany tekst</div>
+            </div>
+            <div class="column-content" id="syntheticContent">
+                <div class="empty-state">
+                    <div class="empty-icon">✨</div>
+                    <div class="empty-text">
+                        Dane syntetyczne pojawią się<br>
+                        po anonimizacji tekstu
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="footer">
+        <div class="footer-left">
+            <div class="status-indicator">
+                <div class="status-dot" id="statusDot"></div>
+                <span id="statusText">Gotowy</span>
+            </div>
+            <div class="stats-badge" id="statsBadge" style="display: none;">
+                <span id="entityCount">0</span> encji wykrytych
+            </div>
+            <div class="stats-badge" id="timeBadge" style="display: none;">
+                <span id="processingTime">0</span> ms
+            </div>
+        </div>
+        
+        <div class="footer-actions">
+            <div class="shortcut-hint">
+                <kbd>Esc</kbd> Zamknij
+                <kbd>←</kbd> <kbd>→</kbd> Nawiguj tokeny
+                <kbd>Ctrl+Enter</kbd> Anonimizuj
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // State
+        let currentResult = null;
+        let currentTokenIndex = -1;
+        let allTokenElements = [];
+        let activeFilters = new Set(['name', 'surname', 'address', 'city', 'document-number', 'pesel', 
+            'bank-account', 'credit-card-number', 'email', 'phone', 'health', 'religion', 
+            'political-view', 'ethnicity', 'sexual-orientation', 'company', 'school-name', 'job-title']);
+
+        // Toggle filter
+        function toggleFilter(btn) {
+            btn.classList.toggle('active');
+            const filters = btn.dataset.filter.split(',');
+            
+            filters.forEach(filter => {
+                if (btn.classList.contains('active')) {
+                    activeFilters.add(filter);
+                } else {
+                    activeFilters.delete(filter);
+                }
+            });
+            
+            if (currentResult) {
+                renderAnonymizedText(currentResult.anonymized, currentResult.entities);
+            }
+        }
+
+        // Process text
+        async function processText() {
+            const inputText = document.getElementById('inputText').value.trim();
+            
+            if (!inputText) {
+                alert('Wprowadź tekst do anonimizacji');
+                return;
+            }
+
+            setProcessingState(true);
+
+            try {
+                const response = await fetch('/api/anonymize', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        text: inputText,
+                        generate_synthetic: true
+                    })
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Błąd przetwarzania');
+                }
+
+                currentResult = await response.json();
+                renderResults(currentResult);
+
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Błąd: ' + error.message);
+            } finally {
+                setProcessingState(false);
+            }
+        }
+
+        // Set processing state
+        function setProcessingState(processing) {
+            const btn = document.getElementById('processBtn');
+            const statusDot = document.getElementById('statusDot');
+            const statusText = document.getElementById('statusText');
+
+            if (processing) {
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner"></span>';
+                statusDot.classList.add('processing');
+                statusText.textContent = 'Przetwarzanie...';
+            } else {
+                btn.disabled = false;
+                btn.textContent = 'Anonimizuj';
+                statusDot.classList.remove('processing');
+                statusText.textContent = 'Gotowy';
+            }
+        }
+
+        // Render results
+        function renderResults(result) {
+            renderAnonymizedText(result.anonymized, result.entities);
+            renderSyntheticText(result.synthetic);
+            updateStats(result);
+        }
+
+        // Render anonymized text with highlighted tokens
+        function renderAnonymizedText(text, entities) {
+            const container = document.getElementById('anonymizedContent');
+            
+            // Parse tokens from anonymized text
+            const tokenRegex = /\[([^\]]+)\]/g;
+            let html = text;
+            let tokenIndex = 0;
+            
+            html = html.replace(tokenRegex, (match, tokenType) => {
+                const baseType = tokenType.split('|')[0].toLowerCase();
+                const isVisible = activeFilters.has(baseType);
+                const cssClass = `token token-${baseType}`;
+                const style = isVisible ? '' : 'opacity: 0.3;';
+                const dataIndex = tokenIndex++;
+                return `<span class="${cssClass}" style="${style}" data-token-index="${dataIndex}" data-token-type="${baseType}" onclick="highlightToken(${dataIndex})">{${tokenType}}</span>`;
+            });
+            
+            // Preserve line breaks
+            html = html.replace(/\n/g, '<br>');
+            
+            container.innerHTML = html;
+            
+            // Update token elements list
+            allTokenElements = container.querySelectorAll('.token');
+            updateTokenCounter();
+        }
+
+        // Render synthetic text
+        function renderSyntheticText(text) {
+            const container = document.getElementById('syntheticContent');
+            
+            if (!text) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-icon">⚠️</div>
+                        <div class="empty-text">
+                            Brak danych syntetycznych<br>
+                            (tekst nie zawierał encji do zamiany)
+                        </div>
+                    </div>
+                `;
+                return;
+            }
+            
+            // Highlight replaced values in synthetic text
+            let html = text.replace(/\n/g, '<br>');
+            container.innerHTML = html;
+        }
+
+        // Update stats
+        function updateStats(result) {
+            const entityCount = document.getElementById('entityCount');
+            const processingTime = document.getElementById('processingTime');
+            const statsBadge = document.getElementById('statsBadge');
+            const timeBadge = document.getElementById('timeBadge');
+            
+            entityCount.textContent = result.entities?.length || 0;
+            processingTime.textContent = result.processing_time_ms?.toFixed(2) || 0;
+            
+            statsBadge.style.display = 'inline-flex';
+            timeBadge.style.display = 'inline-flex';
+        }
+
+        // Highlight specific token
+        function highlightToken(index) {
+            // Remove previous highlight
+            allTokenElements.forEach(el => el.classList.remove('highlighted'));
+            
+            if (index >= 0 && index < allTokenElements.length) {
+                currentTokenIndex = index;
+                const token = allTokenElements[index];
+                token.classList.add('highlighted');
+                token.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+            
+            updateTokenCounter();
+        }
+
+        // Navigate tokens
+        function navigateToken(direction) {
+            if (allTokenElements.length === 0) return;
+            
+            let newIndex = currentTokenIndex + direction;
+            
+            if (newIndex < 0) newIndex = allTokenElements.length - 1;
+            if (newIndex >= allTokenElements.length) newIndex = 0;
+            
+            highlightToken(newIndex);
+        }
+
+        // Update token counter
+        function updateTokenCounter() {
+            const counter = document.getElementById('tokenCounter');
+            const visible = currentTokenIndex >= 0 ? currentTokenIndex + 1 : 0;
+            counter.textContent = `${visible} / ${allTokenElements.length}`;
+        }
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowLeft') {
+                navigateToken(-1);
+            } else if (e.key === 'ArrowRight') {
+                navigateToken(1);
+            } else if (e.key === 'Enter' && e.ctrlKey) {
+                e.preventDefault();
+                processText();
+            } else if (e.key === 'Escape') {
+                // Remove highlight
+                allTokenElements.forEach(el => el.classList.remove('highlighted'));
+                currentTokenIndex = -1;
+                updateTokenCounter();
+            }
+        });
+
+        // Initialize with sample text
+        document.addEventListener('DOMContentLoaded', () => {
+            // Optional: pre-fill with example
+        });
+    </script>
+</body>
+</html>
+
