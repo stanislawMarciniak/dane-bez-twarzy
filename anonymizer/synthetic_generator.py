@@ -73,7 +73,7 @@ class PolishDataGenerator:
     
     # Polskie miasta
     CITIES = [
-        "Warszawa", "Kraków", "Łódź", "Wrocław", "Poznań", "Gdańsk", "Szczecin",
+        "Warszawa", "Kraków", "Poznań", "Gdańsk", "Szczecin",
         "Bydgoszcz", "Lublin", "Białystok", "Katowice", "Gdynia", "Częstochowa",
         "Radom", "Sosnowiec", "Toruń", "Kielce", "Rzeszów", "Gliwice", "Zabrze",
         "Olsztyn", "Bielsko-Biała", "Bytom", "Zielona Góra", "Rybnik", "Ruda Śląska",
