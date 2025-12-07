@@ -8,14 +8,12 @@ import morfeusz2
 logger = logging.getLogger("detailed_labels")
 logger.setLevel(logging.DEBUG)
 
-# Plik logów
 fh = logging.FileHandler("detailed_labels.log", encoding="utf8")
 fh.setLevel(logging.DEBUG)
 formatter = logging.Formatter("%(asctime)s %(levelname)s: %(message)s")
 fh.setFormatter(formatter)
 logger.addHandler(fh)
 
-# Konsola (opcjonalnie)
 ch = logging.StreamHandler()
 ch.setLevel(logging.INFO)
 ch.setFormatter(formatter)
@@ -28,8 +26,7 @@ FILE_ORIGINAL = "data/single_orig.txt"
 FILE_ANONYMIZED = "data/single_anon.txt"
 FILE_OUTPUT = "wyniki.txt"
 
-# Etykiety, które analizujemy
-KEEP_LABELS = {"name", "surname", "city"}
+KEEP_LABELS = {"name", "surname", "city", "sex", "relative"}
 TOKEN_RE = re.compile(r'(\[[a-zA-Z0-9-]+\])|(\w+)|(\s+)|([^\w\s\[\]]+)')
 
 PRZYPADKI = {
@@ -49,7 +46,54 @@ logger.info("Uruchomiono Morfeusz2")
 def tokenize_keep_delimiters(text):
     return [m.group(0) for m in TOKEN_RE.finditer(text)]
 
+def extract_przypadek(tag_string):
+    # tag_string np. 'subst:sg:nom.acc:m3'
+    parts = tag_string.split(":")
+    for p in parts:
+        for sub in p.split("."):
+            if sub in PRZYPADKI:
+                return PRZYPADKI[sub]
+    return None
+
+def analizuj_slowo_city(tokens):
+    kand_full = " ".join(tokens)
+    for tok in tokens:
+        analizy = morfeusz.analyse(tok)
+        for item in analizy:
+            base = item[2][0] if isinstance(item[2], tuple) else item[2]
+            tags = item[2][2] if isinstance(item[2], tuple) else ""
+            dodatkowe = item[3] if len(item) > 3 else []
+            if "nazwa_geograficzna" in dodatkowe or "subst" in tags:
+                przypadek = extract_przypadek(tags)
+                if przypadek:
+                    logger.info("Analiza miasta: %r -> przypadek=%r", kand_full, przypadek)
+                    return kand_full, przypadek
+    return kand_full, None
+
+def analizuj_slowo_sex(tokens):
+    # tokens = lista tokenów (najczęściej 1 token: ["kobieta"])
+    kand_full = " ".join(tokens)
+    analizy = morfeusz.analyse(kand_full)
+    for idx, item in enumerate(analizy):
+        logger.debug("  RAW_SEX[%d]: %r", idx, item)
+        base = item[2][0] if isinstance(item[2], tuple) else item[2]
+        tags = item[2][2] if isinstance(item[2], tuple) else ""
+        dodatkowe = item[3] if len(item) > 3 else []
+        if "subst" in tags:  # rzeczownik
+            przypadek = extract_przypadek(tags)
+            if przypadek:
+                logger.info("Analiza płci zakończona: %r -> przypadek=%r", kand_full, przypadek)
+                return kand_full, przypadek
+    logger.warning("Nie znaleziono wiarygodnej analizy dla płci: %r", kand_full)
+    return kand_full, None
+
+
 def analizuj_slowo(slowo, label):
+    if label == "city":
+        # dla city używamy analizuj_slowo_city
+        return analizuj_slowo_city([slowo]) + (None,)  # dodaj trzeci element dla zgodności
+    if label == "sex":
+        return analizuj_slowo_sex([slowo]) + (None,)
     logger.debug("Analiza słowa: %r, etykieta: %r", slowo, label)
     analizy = morfeusz.analyse(slowo)
     logger.debug("Morfeusz zwrócił %d analiz dla słowa %r", len(analizy), slowo)
@@ -77,13 +121,8 @@ def analizuj_slowo(slowo, label):
 
         logger.debug("  Wybrane: base=%r, rodzaj=%r, przypadek=%r", base, rodzaj, przypadek)
         if przypadek:
-            if label in ["city"]:
-                # tylko przypadek dla city
-                logger.info("Analiza zakończona: %r -> przypadek=%r", slowo, PRZYPADKI[przypadek])
-                return base, None, PRZYPADKI[przypadek]
-            else:
-                logger.info("Analiza zakończona: %r -> base=%r, rodzaj=%r, przypadek=%r", slowo, base, rodzaj, PRZYPADKI[przypadek])
-                return base, rodzaj, PRZYPADKI[przypadek]
+            logger.info("Analiza zakończona: %r -> base=%r, rodzaj=%r, przypadek=%r", slowo, base, rodzaj, PRZYPADKI[przypadek])
+            return base, rodzaj, PRZYPADKI[przypadek]
 
     logger.warning("Nie znaleziono wiarygodnej analizy dla słowa: %r", slowo)
     return None, None, None
@@ -105,18 +144,44 @@ def process_text_tokenized(original, anonymized, allowed_labels):
                 label_name = token[1:-1]
                 if label_name in allowed_labels:
                     if idx + j1 < len(orig_tokens):
-                        kand = orig_tokens[j1 + idx].rstrip(".,;:()[]{}")
-                        base, rodzaj, przypadek = analizuj_slowo(kand, label_name)
-                        if base:
-                            if label_name == "city":
-                                tag_new = f"[{label_name}][{przypadek}]"
+                        # obsługa wielowyrazowych nazw dla city
+                        if label_name == "city":
+                            city_tokens = []
+                            for t_idx in range(j1 + idx, len(orig_tokens)):
+                                t = orig_tokens[t_idx].rstrip(".,;:()[]{}")
+                                if t.istitle():  # wielka litera
+                                    city_tokens.append(t)
+                                else:
+                                    break
+                            base, przypadek = analizuj_slowo_city(city_tokens)
+                            if base and przypadek:
+                                tag_new = f"[city][{przypadek}]"
                             else:
-                                tag_new = f"[{label_name}][{rodzaj}][{przypadek}]" if rodzaj and przypadek else f"[{label_name}][unknown]"
+                                tag_new = "[city]"
                             output.append(tag_new)
-                            logger.info("Zastąpiono %r -> %r", token, tag_new)
+                            logger.info("Zastąpiono %r -> %r (city: %r)", token, tag_new, " ".join(city_tokens))
+
+                        elif label_name == "sex":
+                            kand = orig_tokens[j1 + idx].rstrip(".,;:()[]{}")
+                            base, przypadek = analizuj_slowo_sex([kand])
+                            if base and przypadek:
+                                tag_new = f"[sex][{przypadek}]"
+                            else:
+                                tag_new = "[sex][unknown]"
+                            output.append(tag_new)
+                            logger.info("Zastąpiono %r -> %r (sex: %r)", token, tag_new, kand)
+
                         else:
-                            output.append(token)
-                            logger.warning("Nie udało się zinterpretować słowa %r dla placeholdera %r", kand, token)
+                            # name, surname
+                            kand = orig_tokens[j1 + idx].rstrip(".,;:()[]{}")
+                            base, rodzaj, przypadek = analizuj_slowo(kand, label_name)
+                            if base:
+                                tag_new = f"[{label_name}][{rodzaj}][{przypadek}]" if rodzaj and przypadek else f"[{label_name}][unknown]"
+                                output.append(tag_new)
+                                logger.info("Zastąpiono %r -> %r", token, tag_new)
+                            else:
+                                output.append(token)
+                                logger.warning("Nie udało się zinterpretować słowa %r dla placeholdera %r", kand, token)
                     else:
                         output.append(token)
                         logger.warning("Brak słowa w pliku oryginalnym dla placeholdera %r", token)
