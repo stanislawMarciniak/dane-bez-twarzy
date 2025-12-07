@@ -112,12 +112,12 @@ def analizuj_slowo(slowo, label):
         rodzaj = None
         if label in ["name", "surname", "relative", "job-title"]:
             if any(t in tag_parts for t in ["m1","m2","m3","m","subst:m"]):
-                rodzaj = "męski"
+                rodzaj = "man"
             elif any(t in tag_parts for t in ["f","subst:f"]):
-                rodzaj = "żeński"
+                rodzaj = "woman"
             else:
                 if base.endswith("a"):
-                    rodzaj = "żeński"
+                    rodzaj = "woman"
 
         logger.debug("  Wybrane: base=%r, rodzaj=%r, przypadek=%r", base, rodzaj, przypadek)
         if przypadek:
@@ -206,14 +206,33 @@ def save_file(filepath, content):
         f.write(content)
     logger.info("Zapisano wynik do: %s", filepath)
 
-# ================= GŁÓWNY BLOK =================
 if __name__ == "__main__":
     start = time.perf_counter()
     orig = read_file(FILE_ORIGINAL)
     anon = read_file(FILE_ANONYMIZED)
+
     if orig and anon:
+        print("\n================= TEKST ORYGINALNY =================")
+        print(orig)
+
+        # --- GENEROWANIE LABELI ---
         result = process_text_tokenized(orig, anon, KEEP_LABELS)
         save_file(FILE_OUTPUT, result)
+
+        print("\n================= TEKST PO DODANIU LABELI =================")
+        print(result)
+
+        # --- GENEROWANIE DANYCH SYNTETYCZNYCH ---
+        from synthetic_generator import generate_synthetic_output
+        synthetic = generate_synthetic_output(result)
+        save_file("wyniki_syntetyczne.txt", synthetic)
+
+        print("\n================= TEKST SYNTETYCZNY =================")
+        print(synthetic)
+
+        print("\n✔ Wygenerowano syntetyczny tekst -> wyniki_syntetyczne.txt")
+
     end = time.perf_counter()
     logger.info("Czas wykonania: %.4f sekundy", end - start)
     logger.info("=== KONIEC ===")
+
