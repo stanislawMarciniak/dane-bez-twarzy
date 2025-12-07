@@ -106,7 +106,7 @@ def generate_synthetic_output(anon_text: str) -> str:
                 case = case_attr.strip('[]')
                 is_female = ('woman' in base_pool_key)
 
-                FULL_PHRASE_INFLECT = ['company', 'school-name']
+                FULL_PHRASE_INFLECT = ['company']
 
                 if base_key in FULL_PHRASE_INFLECT:
                     # Odmiana KAŻDEGO słowa
