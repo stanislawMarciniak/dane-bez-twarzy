@@ -22,7 +22,8 @@ torch>=1.10.0
 
 # Pymorphy2 - odmiana przez przypadki
 # pymorphy2>=0.9.0
-morfeusz2>=3.0.0
+morfeusz2==1.99.12
+
 # === Narzędzia developerskie ===
 # pytest>=7.0.0
 # pytest-cov>=3.0.0

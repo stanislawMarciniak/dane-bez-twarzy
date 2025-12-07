@@ -15,7 +15,7 @@ Jestem w [city][miejscownik].
 [name][woman] jest moją [relative][woman][narzędnik]. Jestem [sex][narzędnik].
 
 Informacje Zawodowe i Finansowe
-Pracuję w [company][miejscownik] a skończyłem [school-name][dopełniacz]. Aktualnie jestem [job-title][man][narzędnik]. Moją pensję przelewają na konto bankowe: [bank-account]. Numer karty: [credit-card-number].
+Pracuję w [company][miejscownik] a skończyłem [school-name][biernik]. Aktualnie jestem [job-title][man][narzędnik]. Moją pensję przelewają na konto bankowe: [bank-account]. Numer karty: [credit-card-number].
 
 Ostatnio zmieniłem nick na [username] na Discordzie. Pamiętam, że hasło do konta to [secret]. W razie potrzeby masz też mój numer Pesel: [pesel] i numer dowodu [document-number].
 

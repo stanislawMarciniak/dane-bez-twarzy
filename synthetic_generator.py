@@ -29,34 +29,28 @@ GENERATOR_MAP_FUNCTIONS = {
     'document-number': generate_random_document_number,
     'credit-card-number': generate_random_credit_card_number,
     'address': lambda: generate_random_address(random.choice(SYNTHETIC_POOL['city'])),
-
 }
 
-# Lista tokenów, które MUSZĄ być unikalne (UAKTUALNIONA O NAZWISKA)
-UNIQUE_TOKENS = ['name-man', 'name-woman', 'username', 'company', 'school-name',
-                 'job-title-man', 'job-title-woman',
-                 'surname-man', 'surname-woman', 'relative-man', 'relative-woman']
+UNIQUE_TOKENS = [
+    'name-man', 'name-woman', 'username', 'company', 'school-name',
+    'job-title-man', 'job-title-woman',
+    'surname-man', 'surname-woman',
+    'relative-man', 'relative-woman'
+]
 
-# Inicjalizacja serwisu Morfeusza
 INFLECTOR_SERVICE = MorfeuszInflector()
 
 
 def generate_synthetic_output(anon_text: str) -> str:
-    """
-    Główna funkcja generacji syntetycznej, koordynująca unikalność, płeć i fleksję.
-    """
 
-    # Pamięć tokenów jest lokalna dla tej sesji
     TOKEN_MEMORY = {}
 
-    # Utworzenie KOPII puli dla tokenów, które muszą być unikalne
     available_pool = {
         token_type: list(SYNTHETIC_POOL[token_type])
         for token_type in UNIQUE_TOKENS if token_type in SYNTHETIC_POOL
     }
 
     def replacer(match):
-        """Logika zamiany: generuje wartość tylko raz i zapisuje w pamięci."""
 
         raw_token_name = match.group(1)
         gender_attr = match.group(2)
@@ -64,29 +58,27 @@ def generate_synthetic_output(anon_text: str) -> str:
 
         token_key = match.group(0)
 
-        # A. Sprawdzenie Spójności
         if token_key in TOKEN_MEMORY:
             return TOKEN_MEMORY[token_key]
-
-        # B. Określanie klucza puli (base_pool_key)
 
         base_key = re.sub(r'\d+$', '', raw_token_name)
         base_pool_key = base_key
 
         gender_suffix = gender_attr.strip('[]') if gender_attr else None
 
-        GENDER_SENSITIVE_KEYS = ['name', 'surname', 'sexual-orientation', 'ethnicity', 'job-title', 'relative']
+        GENDER_SENSITIVE_KEYS = [
+            'name', 'surname', 'sexual-orientation',
+            'ethnicity', 'job-title', 'relative'
+        ]
 
-        # Jeśli token jest czuły na płeć (jest w GENDER_SENSITIVE_KEYS)
         if base_key in GENDER_SENSITIVE_KEYS:
             final_gender = gender_suffix if gender_suffix in ['man', 'woman'] else 'man'
             base_pool_key = f'{base_key}-{final_gender}'
 
         new_value = None
 
-        # 3. GENERACJA WŁAŚCIWEJ WARTOŚCI
+        # --- GENERACJA ---
 
-        # 3.1. GENERACJA UNIKALNA (name-man, surname-woman, company, job-title-man/woman)
         if base_pool_key in available_pool:
             current_pool = available_pool[base_pool_key]
             if not current_pool:
@@ -95,44 +87,54 @@ def generate_synthetic_output(anon_text: str) -> str:
                 new_value = random.choice(current_pool)
                 current_pool.remove(new_value)
 
-        # 3.2. Generacja EMail (Specjalny przypadek)
         elif base_key == 'email':
             all_names = SYNTHETIC_POOL['name-man'] + SYNTHETIC_POOL['name-woman']
             temp_name = random.choice(all_names)
-            temp_surname = random.choice(
-                SYNTHETIC_POOL['surname-man'])  # Używamy surname-man, bo jest większe/bardziej ogólne
+            temp_surname = random.choice(SYNTHETIC_POOL['surname-man'])
             new_value = generate_random_email(temp_name, temp_surname)
 
-        # 3.3. Generacja przez Funkcje Specjalne
         elif base_key in GENERATOR_MAP_FUNCTIONS:
             new_value = GENERATOR_MAP_FUNCTIONS[base_key]()
 
-        # 3.4. Generacja z Puli Ogólnej
         elif base_pool_key in SYNTHETIC_POOL:
             new_value = random.choice(SYNTHETIC_POOL[base_pool_key])
 
-        # 4. Zapis, ODMIANA i Zwrot:
+        # --- ODMIANA ---
         if new_value is not None:
 
-            # ⭐️ KROK FLEKSJI (ODMIANA)
             if case_attr:
                 case = case_attr.strip('[]')
                 is_female = ('woman' in base_pool_key)
 
-                new_value = INFLECTOR_SERVICE.inflect_word(new_value, case, is_female)
+                FULL_PHRASE_INFLECT = ['company', 'school-name']
+
+                if base_key in FULL_PHRASE_INFLECT:
+                    # Odmiana KAŻDEGO słowa
+                    parts = new_value.split(" ")
+                    inflected_parts = [
+                        INFLECTOR_SERVICE.inflect_word(word, case, is_female)
+                        for word in parts
+                    ]
+                    new_value = " ".join(inflected_parts)
+
+                else:
+                    # Standard: odmiana PIERWSZEGO słowa
+                    parts = new_value.split(" ")
+                    inflected_first = INFLECTOR_SERVICE.inflect_word(
+                        parts[0], case, is_female
+                    )
+                    new_value = " ".join([inflected_first] + parts[1:])
 
             TOKEN_MEMORY[token_key] = new_value
             return new_value
 
         return match.group(0)
 
-    # 5. Wykonanie podmiany
     final_text = re.sub(SYNTHETIC_PATTERN, replacer, anon_text)
-
     return final_text
 
 
-# --- Blok Uruchamiający (bez zmian) ---
+# --- Blok uruchamiający ---
 if __name__ == '__main__':
 
     if len(sys.argv) < 2:
@@ -146,6 +148,7 @@ if __name__ == '__main__':
             anon_input = f.read()
 
         synthetic_output = generate_synthetic_output(anon_input)
+
         print("--- Oryginalna Zanonimizowana Treść ---")
         print(anon_input)
         print("\n--- Treść Syntetyczna ---")

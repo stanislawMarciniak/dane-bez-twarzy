@@ -112,12 +112,12 @@ def analizuj_slowo(slowo, label):
         rodzaj = None
         if label in ["name", "surname"]:
             if any(t in tag_parts for t in ["m1","m2","m3","m","subst:m"]):
-                rodzaj = "męski"
+                rodzaj = "man"
             elif any(t in tag_parts for t in ["f","subst:f"]):
-                rodzaj = "żeński"
+                rodzaj = "woman"
             else:
                 if base.endswith("a"):
-                    rodzaj = "żeński"
+                    rodzaj = "woman"
 
         logger.debug("  Wybrane: base=%r, rodzaj=%r, przypadek=%r", base, rodzaj, przypadek)
         if przypadek:
@@ -167,7 +167,7 @@ def process_text_tokenized(original, anonymized, allowed_labels):
                             if base and przypadek:
                                 tag_new = f"[sex][{przypadek}]"
                             else:
-                                tag_new = "[sex][unknown]"
+                                tag_new = "[sex]"
                             output.append(tag_new)
                             logger.info("Zastąpiono %r -> %r (sex: %r)", token, tag_new, kand)
 
@@ -176,7 +176,7 @@ def process_text_tokenized(original, anonymized, allowed_labels):
                             kand = orig_tokens[j1 + idx].rstrip(".,;:()[]{}")
                             base, rodzaj, przypadek = analizuj_slowo(kand, label_name)
                             if base:
-                                tag_new = f"[{label_name}][{rodzaj}][{przypadek}]" if rodzaj and przypadek else f"[{label_name}][unknown]"
+                                tag_new = f"[{label_name}][{rodzaj}][{przypadek}]" if rodzaj and przypadek else f"[{label_name}]"
                                 output.append(tag_new)
                                 logger.info("Zastąpiono %r -> %r", token, tag_new)
                             else:
@@ -206,14 +206,33 @@ def save_file(filepath, content):
         f.write(content)
     logger.info("Zapisano wynik do: %s", filepath)
 
-# ================= GŁÓWNY BLOK =================
 if __name__ == "__main__":
     start = time.perf_counter()
     orig = read_file(FILE_ORIGINAL)
     anon = read_file(FILE_ANONYMIZED)
+
     if orig and anon:
+        print("\n================= TEKST ORYGINALNY =================")
+        print(orig)
+
+        # --- GENEROWANIE LABELI ---
         result = process_text_tokenized(orig, anon, KEEP_LABELS)
         save_file(FILE_OUTPUT, result)
+
+        print("\n================= TEKST PO DODANIU LABELI =================")
+        print(result)
+
+        # --- GENEROWANIE DANYCH SYNTETYCZNYCH ---
+        from synthetic_generator import generate_synthetic_output
+        synthetic = generate_synthetic_output(result)
+        save_file("wyniki_syntetyczne.txt", synthetic)
+
+        print("\n================= TEKST SYNTETYCZNY =================")
+        print(synthetic)
+
+        print("\n✔ Wygenerowano syntetyczny tekst -> wyniki_syntetyczne.txt")
+
     end = time.perf_counter()
     logger.info("Czas wykonania: %.4f sekundy", end - start)
     logger.info("=== KONIEC ===")
+
