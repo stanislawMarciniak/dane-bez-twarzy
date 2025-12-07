@@ -1,0 +1,30 @@
+O rany, właśnie dostałam SMS-a, że moje konto zostało zablokowane! Podają [name1][woman][dopełniacz], [surname1][woman][dopełniacz] i [email], ale link wygląda podejrzanie... Co robić?!
+
+[company][mianownik] to firma, która kiedyś działała w [city1][miejscownik]. Dodatkowo, muszę się udać do [city2][dopełniacz].
+
+[name2][woman][mianownik] poszła za to odwiedzić [name3][man][biernik]. To było dziwne.
+
+Dane Identyfikacyjne i Kontekstowe
+Mam dopiero [age] lat, a on już się do mnie dobiera! Mieszkam w [city3][miejscownik], ale mam [political-view] poglądy.
+
+Moje pochodzenie to [ethnicity][woman]. Jestem też [sexual-orientation][woman] a urodziłam się [date-of-birth]. W moim kraju, [religion][mianownik] jest najważniejszą wartością.
+
+Jestem w [city][miejscownik].
+[date] przyjęto pacjenta, który skarżył się na [health][biernik].
+
+[name][woman] jest moją [relative][woman][narzędnik]. Jestem [sex][narzędnik].
+
+Informacje Zawodowe i Finansowe
+Pracuję w [company][miejscownik] a skończyłem [school-name][dopełniacz]. Aktualnie jestem [job-title][man][narzędnik]. Moją pensję przelewają na konto bankowe: [bank-account]. Numer karty: [credit-card-number].
+
+Ostatnio zmieniłem nick na [username] na Discordzie. Pamiętam, że hasło do konta to [secret]. W razie potrzeby masz też mój numer Pesel: [pesel] i numer dowodu [document-number].
+
+Wczorajsza rozmowa z [name4][man][narzędnik] była dziwna. Zobaczyłem [name4][man][biernik] w toalecie, a następnie podałem papier [name4][man][celownik].
+
+
+Rozmawialiśmy o [name5][man][miejscownik], który jest zawsze [sexual-orientation][man]. [name6][man] jest moim [relative][narzędnik].
+
+
+
+
+
