@@ -26,7 +26,7 @@ FILE_ORIGINAL = "data/single_orig.txt"
 FILE_ANONYMIZED = "data/single_anon.txt"
 FILE_OUTPUT = "wyniki.txt"
 
-KEEP_LABELS = {"name", "surname", "city", "sex", "relative"}
+KEEP_LABELS = {"name", "surname", "city", "sex", "relative", "job-title"}
 TOKEN_RE = re.compile(r'(\[[a-zA-Z0-9-]+\])|(\w+)|(\s+)|([^\w\s\[\]]+)')
 
 PRZYPADKI = {
@@ -110,7 +110,7 @@ def analizuj_slowo(slowo, label):
         przypadek = next((p for p in tag_parts if p in PRZYPADKI), None)
 
         rodzaj = None
-        if label in ["name", "surname"]:
+        if label in ["name", "surname", "relative", "job-title"]:
             if any(t in tag_parts for t in ["m1","m2","m3","m","subst:m"]):
                 rodzaj = "męski"
             elif any(t in tag_parts for t in ["f","subst:f"]):
@@ -167,7 +167,7 @@ def process_text_tokenized(original, anonymized, allowed_labels):
                             if base and przypadek:
                                 tag_new = f"[sex][{przypadek}]"
                             else:
-                                tag_new = "[sex][unknown]"
+                                tag_new = "[sex]"
                             output.append(tag_new)
                             logger.info("Zastąpiono %r -> %r (sex: %r)", token, tag_new, kand)
 
@@ -176,7 +176,7 @@ def process_text_tokenized(original, anonymized, allowed_labels):
                             kand = orig_tokens[j1 + idx].rstrip(".,;:()[]{}")
                             base, rodzaj, przypadek = analizuj_slowo(kand, label_name)
                             if base:
-                                tag_new = f"[{label_name}][{rodzaj}][{przypadek}]" if rodzaj and przypadek else f"[{label_name}][unknown]"
+                                tag_new = f"[{label_name}][{rodzaj}][{przypadek}]" if rodzaj and przypadek else f"[{label_name}]"
                                 output.append(tag_new)
                                 logger.info("Zastąpiono %r -> %r", token, tag_new)
                             else:
