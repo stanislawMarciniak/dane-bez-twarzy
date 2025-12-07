@@ -26,7 +26,7 @@ FILE_ORIGINAL = "data/single_orig.txt"
 FILE_ANONYMIZED = "data/single_anon.txt"
 FILE_OUTPUT = "wyniki.txt"
 
-KEEP_LABELS = {"name", "surname", "city", "sex", "relative"}
+KEEP_LABELS = {"name", "surname", "city", "sex", "relative", "job-title"}
 TOKEN_RE = re.compile(r'(\[[a-zA-Z0-9-]+\])|(\w+)|(\s+)|([^\w\s\[\]]+)')
 
 PRZYPADKI = {
@@ -110,7 +110,7 @@ def analizuj_slowo(slowo, label):
         przypadek = next((p for p in tag_parts if p in PRZYPADKI), None)
 
         rodzaj = None
-        if label in ["name", "surname"]:
+        if label in ["name", "surname", "relative", "job-title"]:
             if any(t in tag_parts for t in ["m1","m2","m3","m","subst:m"]):
                 rodzaj = "man"
             elif any(t in tag_parts for t in ["f","subst:f"]):
