@@ -3,16 +3,16 @@ import time
 from rapidfuzz.distance import Levenshtein
 
 # --- KONFIGURACJA ---
-FILE_ORIGINAL = "nask_train/orig.txt"
-FILE_ANONYMIZED = "nask_train/anonymized.txt"
-FILE_OUTPUT = "output_final.txt"
+FILE_ORIGINAL = "data/orig.txt"
+FILE_ANONYMIZED = "data/anonimized.txt"
+FILE_OUTPUT = "output_final1.txt"
 
 # Lista etykiet, które mają zostać (zanonimizowane)
 KEEP_LABELS = {
     "name", "surname", "age", "date-of-birth", "date", "sex", "religion",
     "political-view", "ethnicity", "sexual-orientation", "health", "relative",
-    "city", "address", "email", "phone",
-    "pesel", "document-number",
+    "city", "address",
+    "phone", "document-number",
     "company", "school-name", "job-title",
     "bank-account", "credit-card-number",
     "credit-card-number",
@@ -48,18 +48,17 @@ def process_text_tokenized(original, anonymized, allowed_labels):
             output.extend(anon_chunk)
 
         elif tag == "replace":
-            # Sprawdzenie, czy są niedozwolone etykiety
+            # Zastępuj zawsze jeśli jest [phone] lub forbidden
+            has_phone = any("[phone]" in t for t in anon_chunk)
             contains_forbidden = any(
                 t.startswith("[") and t.endswith("]") and t[1:-1] not in allowed_labels
                 for t in anon_chunk
             )
-
-            if contains_forbidden:
-                # Przywracamy oryginał
+            if has_phone or contains_forbidden:
                 output.extend(orig_chunk)
             else:
-                # Pozwalamy na anonimową wersję
                 output.extend(anon_chunk)
+
 
         elif tag == "delete":
             # To jest w anon, ale nie ma w oryginale → przepisujemy

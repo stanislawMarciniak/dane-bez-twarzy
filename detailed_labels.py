@@ -26,7 +26,7 @@ FILE_ORIGINAL = "data/single_orig.txt"
 FILE_ANONYMIZED = "data/single_anon.txt"
 FILE_OUTPUT = "wyniki.txt"
 
-KEEP_LABELS = {"name", "surname", "city", "sex", "relative", "job-title"}
+KEEP_LABELS = {"name", "surname", "city", "sex", "relative", "job-title", "sexual-orientation"}
 TOKEN_RE = re.compile(r'(\[[a-zA-Z0-9-]+\])|(\w+)|(\s+)|([^\w\s\[\]]+)')
 
 PRZYPADKI = {
@@ -46,14 +46,39 @@ logger.info("Uruchomiono Morfeusz2")
 def tokenize_keep_delimiters(text):
     return [m.group(0) for m in TOKEN_RE.finditer(text)]
 
+# ---------- pomocniczne extractory ----------
 def extract_przypadek(tag_string):
-    # tag_string np. 'subst:sg:nom.acc:m3'
+    """
+    Wyciąga pierwszy pasujący przypadek z tag_string.
+    Obsługuje np. 'subst:sg:nom.acc:m3' i 'adj:sg:nom.voc:f:pos'
+    """
+    if not tag_string or not isinstance(tag_string, str):
+        return None
     parts = tag_string.split(":")
     for p in parts:
+        # p może być 'nom.acc' albo 'nom.voc' -> rozbijamy po '.'
         for sub in p.split("."):
             if sub in PRZYPADKI:
                 return PRZYPADKI[sub]
     return None
+
+def extract_rodzaj_from_tagparts(tag_parts):
+    """
+    Zamapuj symbole z tagów na 'męski' / 'żeński'.
+    Przyjmuje listę części (np. ['adj','sg','nom.voc','f','pos'] lub ['subst','sg','nom.acc','m3'])
+    """
+    if not tag_parts:
+        return None
+    # najpierw sprawdź bezpośrednie oznaczenia 'f' lub 'm'
+    for t in tag_parts:
+        if t == "f" or t == "subst:f" or t == "adj:f":
+            return "żeński"
+        if t in ("m1", "m2", "m3", "m", "subst:m", "adj:m"):
+            return "męski"
+    # czasem mamy 'm3' jako oddzielny token po split(":") lub po "." — już uwzględnione wyżej
+    # heurystyka: jeśli żadnego nie ma, sprawdź końcówkę bazowej formy (ale caller musi przekazać base)
+    return None
+
 
 def analizuj_slowo_city(tokens):
     kand_full = " ".join(tokens)
@@ -89,43 +114,69 @@ def analizuj_slowo_sex(tokens):
 
 
 def analizuj_slowo(slowo, label):
-    if label == "city":
-        # dla city używamy analizuj_slowo_city
-        return analizuj_slowo_city([slowo]) + (None,)  # dodaj trzeci element dla zgodności
-    if label == "sex":
-        return analizuj_slowo_sex([slowo]) + (None,)
+    """
+    Zwraca (base, rodzaj, przypadek) lub (None, None, None)
+    Rozpoznaje subst i adj (przymiotniki) - 
+    """
     logger.debug("Analiza słowa: %r, etykieta: %r", slowo, label)
-    analizy = morfeusz.analyse(slowo)
-    logger.debug("Morfeusz zwrócił %d analiz dla słowa %r", len(analizy), slowo)
+    try:
+        analizy = morfeusz.analyse(slowo)
+    except Exception:
+        logger.exception("Błąd morfeusz.analyse dla: %r", slowo)
+        return None, None, None
 
+    logger.debug("Morfeusz zwrócił %d analiz dla słowa %r", len(analizy), slowo)
     for idx, item in enumerate(analizy):
         logger.debug("  RAW[%d]: %r", idx, item)
+        # ujednolicamy parts jak wcześniej
         parts = list(item[2]) if isinstance(item[2], tuple) else list(item[2:])
+        # base = pierwszy string
         base = next((p for p in parts if isinstance(p, str)), None)
+        # tags = ostatni string zawierający ":" (np. 'subst:sg:nom.acc:m3' lub 'adj:sg:nom.voc:f:pos')
         tags = next((p for p in reversed(parts) if isinstance(p, str) and ":" in p), None)
-        if not base or not tags:
+
+        # dodatkowe elementy (np. ['nazwa_geograficzna'])
+        dodatkowe = item[3] if len(item) > 3 else []
+
+        logger.debug("    parsed parts=%r -> base=%r, tags=%r, dodatkowe=%r", parts, base, tags, dodatkowe)
+
+        if not base:
             continue
 
-        tag_parts = tags.split(":")
-        przypadek = next((p for p in tag_parts if p in PRZYPADKI), None)
+        # przygotuj listę "tag_parts" z split(":") i rozbiciem po "."
+        tag_parts = []
+        if tags:
+            for part in tags.split(":"):
+                tag_parts.extend(part.split("."))
 
-        rodzaj = None
-        if label in ["name", "surname", "relative", "job-title"]:
-            if any(t in tag_parts for t in ["m1","m2","m3","m","subst:m"]):
-                rodzaj = "man"
-            elif any(t in tag_parts for t in ["f","subst:f"]):
-                rodzaj = "woman"
-            else:
-                if base.endswith("a"):
-                    rodzaj = "woman"
+        # spróbuj wyciągnąć przypadek
+        przypadek = extract_przypadek(tags) if tags else None
 
-        logger.debug("  Wybrane: base=%r, rodzaj=%r, przypadek=%r", base, rodzaj, przypadek)
-        if przypadek:
-            logger.info("Analiza zakończona: %r -> base=%r, rodzaj=%r, przypadek=%r", slowo, base, rodzaj, PRZYPADKI[przypadek])
-            return base, rodzaj, PRZYPADKI[przypadek]
+        # spróbuj wyciągnąć rodzaj z tag_parts
+        rodzaj = extract_rodzaj_from_tagparts(tag_parts)
+
+        # Jeśli nie znaleziono rodzaju, dodatkowa heurystyka: końcówka -a -> żeński
+        if not rodzaj and isinstance(base, str) and base.endswith("a"):
+            rodzaj = "żeński"
+
+        # Akceptujemy zarówno rzeczowniki (subst) jak i przymiotniki (adj)
+        # oraz przydatne dodatkowe info (np. 'nazwa_geograficzna').
+        accept = False
+        if tags and ("subst" in tags or "adj" in tags):
+            accept = True
+        if dodatkowe:
+            # jeżeli w dodatkowych tagach są przydatne info (np. 'nazwa_geograficzna'), też akceptujemy
+            accept = True
+
+        logger.debug("    decyzja: accept=%r, base=%r, rodzaj=%r, przypadek=%r", accept, base, rodzaj, przypadek)
+
+        if accept and przypadek:
+            logger.info("Analiza zakończona: %r -> base=%r, rodzaj=%r, przypadek=%r", slowo, base, rodzaj, przypadek)
+            return base, rodzaj, przypadek
 
     logger.warning("Nie znaleziono wiarygodnej analizy dla słowa: %r", slowo)
     return None, None, None
+
 
 def process_text_tokenized(original, anonymized, allowed_labels):
     orig_tokens = tokenize_keep_delimiters(original)
